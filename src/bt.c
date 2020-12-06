@@ -105,7 +105,7 @@ unsigned char chr_min = 0;
 unsigned char chr_max = 255;
 const char *port = NULL;
 int nbports = 0;
-int currport = 0;
+int currport = -1; // last one
 int quiet = 0;
 int baud = 0;
 
@@ -711,10 +711,13 @@ int main(int argc, char **argv)
 	/* these are the remaining arguments not starting with "-" */
 	port = curr && *curr ? curr : NULL;
 
+	if (port && !parse_int(port, &currport))
+		currport = -1;
+
 	/* we may need to scan the ports on the system for listing and
 	 * automatic discovery.
 	 */
-	if (!port || do_wait_new || do_list) {
+	if (!port || currport >= 0 || do_wait_new || do_list) {
 		/* find the first eligible port */
 		scan_ports();
 	}
@@ -737,17 +740,22 @@ int main(int argc, char **argv)
 				prev_nbports = nbports;
 		} while (nbports <= prev_nbports);
 
-		if (!quiet) {
-			printf("New port connected:\n");
-			list_ports(0);
-		}
+		if (!quiet && !do_list && !do_print)
+			list_ports(nbports - 1);
 	}
+
+	/* port was designated using a number */
+	if (currport >= 0 && currport < nbports)
+		port = serial_ports[currport].name;
 
 	/* it's time to figure what port we're going to use. Check if the port
 	 * is designated by a number.
 	 */
-	if (port && !parse_int(port, &currport))
-		currport = 0;
+	if (currport < 0) {
+		currport = nbports + currport;
+		if (currport < 0)
+			currport = 0;
+	}
 
 	if (do_list) {
 		/* list available ports and quit */
@@ -784,9 +792,9 @@ int main(int argc, char **argv)
 			 *    be retried if the port was chosen automatically.
 			 *  - other errors always cause an abort
 			 */
-			if ((curr && *curr) && (currport < nbports) &&
+			if ((curr && *curr) && (currport > 0) &&
 			    (errno == EBUSY || errno == ENODEV || errno == ENOENT || errno == ENOMEM)) {
-				currport++;
+				currport--;
 				if (!quiet)
 					printf(" Failed! (%s)\n", strerror(errno));
 				continue;
