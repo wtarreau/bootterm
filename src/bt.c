@@ -231,17 +231,70 @@ char *read_link_from(const char *format, ...)
 }
 
 
-/* reverse-sorting function for serial ports: ensures the most recently
- * registered port appears first. If some are equal, the device name is
- * used instead for normal ordering.
+/* sorting function for serial ports: ensures the most recently registered port
+ * appears first. If some are equal, the device name is used instead for normal
+ * ordering with an attempt at respecting numeric ordering.
  */
 static int serial_port_cmp(const void *a, const void *b)
 {
 	const struct serial *pa = (const struct serial *)a;
 	const struct serial *pb = (const struct serial *)b;
-	if (pb->ctime != pa->ctime)
-		return pb->ctime - pa->ctime;
-	return strcmp(pa->name, pb->name);
+	long long la, lb;
+	int pos;
+
+	if (pa->ctime != pb->ctime)
+		return pa->ctime - pb->ctime;
+
+	pos = 0;
+	while (pa->name[pos] == pb->name[pos]) {
+		if (!pa->name[pos])
+			return 0; // identical strings
+		pos++;
+	}
+
+	/* if one of the string stops here, it comes first. Eg "tty" comes
+	 * before "tty1".
+	 */
+	if (!pa->name[pos])
+		return -1;
+
+	if (!pb->name[pos])
+		return 1;
+
+	/* if the first different char is not a digit in any of them, that's
+	 * OK. Eg "ttyS1" comes before "ttyUSB0".
+	 */
+	if (!isdigit((int)(unsigned char)pa->name[pos]) &&
+	    !isdigit((int)(unsigned char)pb->name[pos]))
+		return (int)pa->name[pos] - (int)pb->name[pos];
+
+	/* if only one is a digit and previous char is not a digit, the digit
+	 * goes first. Eg. "tty63" comes before "ttyp0".
+	 */
+	if (isdigit((int)(unsigned char)pa->name[pos]) && (!pos || !isdigit((int)(unsigned char)pa->name[pos-1])) &&
+	    !isdigit((int)(unsigned char)pb->name[pos]))
+		return -1;
+
+	if (isdigit((int)(unsigned char)pb->name[pos]) && (!pos || !isdigit((int)(unsigned char)pb->name[pos-1])) &&
+	    !isdigit((int)(unsigned char)pa->name[pos]))
+		return 1;
+
+	/* so both are digits preceeded by digits. We need to roll back to the
+	 * full number because we could be on a series of zeroes in a larger
+	 * number, e.g. "port100011" comes after "port10012".
+	 */
+
+	/* look back for the beginning of a possible number */
+	while (pos > 0 && isdigit((int)(unsigned char)pa->name[pos-1]))
+		pos--;
+
+	la = strtoll(pa->name + pos, 0, 0);
+	lb = strtoll(pb->name + pos, 0, 0);
+
+	if (la < lb)
+		return -1;
+	else
+		return 1;
 }
 
 /* scans available ports, fills serial_ports[] and returns the number of
