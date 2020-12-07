@@ -230,6 +230,23 @@ char *read_link_from(const char *format, ...)
 	return line;
 }
 
+/* checks if a file exists. returns non-zero if OK, otherwise zero. */
+int file_exists(const char *format, ...)
+{
+	char ftmp[PATH_MAX];
+	int needed = 0;
+	va_list args;
+	struct stat st;
+
+	va_start(args, format);
+	needed = vsnprintf(ftmp, sizeof(ftmp), format, args);
+	va_end(args);
+
+	if (needed < sizeof(ftmp))
+		return stat(ftmp, &st) == 0;
+
+	return 0;
+}
 
 /* sorting function for serial ports: ensures the most recently registered port
  * appears first. If some are equal, the device name is used instead for normal
@@ -322,6 +339,20 @@ int scan_ports()
 		link = driver = model = name = NULL;
 		snprintf(ftmp, sizeof(ftmp), "/sys/class/tty/%s/device/.", ent->d_name);
 		if (stat(ftmp, &st) == 0) {
+			/* really populated ports have either a "resources"
+			 * entry (8250/16550), a "resource" entry (platform),
+			 * an "of_node" entry (anything from a DT), an
+			 * "interface" entry (e.g. for cdc_acm) or a "port_number"
+			 * entry (e.g. for USB). This seems to cover most cases
+			 * where auto-detection matters.
+			 */
+			if (!file_exists("/sys/class/tty/%s/device/resources", ent->d_name) &&
+			    !file_exists("/sys/class/tty/%s/device/resource", ent->d_name) &&
+			    !file_exists("/sys/class/tty/%s/device/of_node", ent->d_name) &&
+			    !file_exists("/sys/class/tty/%s/device/interface", ent->d_name) &&
+			    !file_exists("/sys/class/tty/%s/device/port_number", ent->d_name))
+				goto fail;
+
 			link = read_link_from("/sys/class/tty/%s/device/driver", ent->d_name);
 			if (!link)
 				goto fail;
