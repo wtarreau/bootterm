@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/select.h>
+#include <sys/ioctl.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -36,7 +37,6 @@
 #include <stdlib.h>
 #include <string.h>
 #if defined(__linux__) && !defined(NO_TCGETS2)
-#include <sys/ioctl.h>
 #include <asm/termbits.h>
 #else
 #include <termios.h>
@@ -61,7 +61,7 @@
 
 const char version_str[] =
 	"BootTerm " VERSION " -- the terminal written for users by its users\n"
-#ifdef TCGETS2
+#if defined(TCGETS2) && !defined(NO_TCGETS2)
 	"Built with support for custom baud rates (TCGETS2).\n"
 #endif
 	"Copyright (C) 2020 Willy Tarreau <w@1wt.eu>\n"
@@ -593,7 +593,7 @@ int open_port(const char *port)
 	return fd;
 }
 
-#ifdef TCSETS2 // since linux 2.6.20 (commit edc6afc54)
+#if defined(TCGETS2) && !defined(NO_TCGETS2) // since linux 2.6.20 (commit edc6afc54)
 /* try to set the baud rate and mode on the port corresponding to the fd. The
  * baud rate remains unchanged if <baud> is zero. We have two APIs, one using
  * TCSETS and one using TCSETS2, which allows non-standard baud rates. On
