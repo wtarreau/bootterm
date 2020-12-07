@@ -96,6 +96,115 @@ struct serial {
 	time_t ctime;          // device attachment date
 };
 
+const struct {
+	int b;      // baud rate
+	tcflag_t f; // corresponding flag
+} baud_rates[] = {
+#ifdef B50
+	{ .b = 50, .f = B50 },
+#endif
+#ifdef B75
+	{ .b = 75, .f = B75 },
+#endif
+#ifdef B110
+	{ .b = 110, .f = B110 },
+#endif
+#ifdef B134
+	{ .b = 134, .f = B134 },
+#endif
+#ifdef B150
+	{ .b = 150, .f = B150 },
+#endif
+#ifdef B200
+	{ .b = 200, .f = B200 },
+#endif
+#ifdef B300
+	{ .b = 300, .f = B300 },
+#endif
+#ifdef B600
+	{ .b = 600, .f = B600 },
+#endif
+#ifdef B1200
+	{ .b = 1200, .f = B1200 },
+#endif
+#ifdef B1800
+	{ .b = 1800, .f = B1800 },
+#endif
+#ifdef B2400
+	{ .b = 2400, .f = B2400 },
+#endif
+#ifdef B4800
+	{ .b = 4800, .f = B4800 },
+#endif
+#ifdef B9600
+	{ .b = 9600, .f = B9600 },
+#endif
+#ifdef B19200
+	{ .b = 19200, .f = B19200 },
+#endif
+#ifdef B38400
+	{ .b = 38400, .f = B38400 },
+#endif
+#ifdef B57600
+	{ .b = 57600, .f = B57600 },
+#endif
+#ifdef B76800
+	{ .b = 76800, .f = B76800 },
+#endif
+#ifdef B115200
+	{ .b = 115200, .f = B115200 },
+#endif
+#ifdef B153600
+	{ .b = 153600, .f = B153600 },
+#endif
+#ifdef B230400
+	{ .b = 230400, .f = B230400 },
+#endif
+#ifdef B307200
+	{ .b = 307200, .f = B307200 },
+#endif
+#ifdef B460800
+	{ .b = 460800, .f = B460800 },
+#endif
+#ifdef B500000
+	{ .b = 500000, .f = B500000 },
+#endif
+#ifdef B576000
+	{ .b = 576000, .f = B576000 },
+#endif
+#ifdef B614400
+	{ .b = 614400, .f = B614400 },
+#endif
+#ifdef B921600
+	{ .b = 921600, .f = B921600 },
+#endif
+#ifdef B1000000
+	{ .b = 1000000, .f = B1000000 },
+#endif
+#ifdef B1152000
+	{ .b = 1152000, .f = B1152000 },
+#endif
+#ifdef B1500000
+	{ .b = 1500000, .f = B1500000 },
+#endif
+#ifdef B2000000
+	{ .b = 2000000, .f = B2000000 },
+#endif
+#ifdef B2500000
+	{ .b = 2500000, .f = B2500000 },
+#endif
+#ifdef B3000000
+	{ .b = 3000000, .f = B3000000 },
+#endif
+#ifdef B3500000
+	{ .b = 3500000, .f = B3500000 },
+#endif
+#ifdef B4000000
+	{ .b = 4000000, .f = B4000000 },
+#endif
+	{ .b = 0, .f = ~0 } // end
+};
+
 /* operating modes */
 struct serial serial_ports[MAXPORTS];
 enum cap_mode cap_mode = CAP_NONE;
@@ -481,121 +590,28 @@ int set_port(int fd, int baud)
 	return ioctl(fd, TCSETS2, &tio);
 }
 
+/* returns the currently configured baud rate for the port, or 0 if unknown */
+int get_baud_rate(int fd)
+{
+	struct termios2 tio;
+	int idx;
+
+	ioctl(fd, TCGETS2, &tio);
+	if ((tio.c_cflag & (CBAUD|CBAUDEX)) == BOTHER)
+		return tio.c_ospeed;
+
+	for (idx = 0; baud_rates[idx].b; idx++)
+		if ((tio.c_cflag & (CBAUD|CBAUDEX)) == baud_rates[idx].f)
+			return baud_rates[idx].b;
+	return 0;
+}
+
 void list_baud_rates()
 {
 	printf("termios2 is supported, so any baud rate is supported\n");
 }
 
 #else /* TCSETS2 not defined */
-
-const struct {
-	int b;      // baud rate
-	tcflag_t f; // corresponding flag
-} baud_rates[] = {
-#ifdef B50
-	{ .b = 50, .f = B50 },
-#endif
-#ifdef B75
-	{ .b = 75, .f = B75 },
-#endif
-#ifdef B110
-	{ .b = 110, .f = B110 },
-#endif
-#ifdef B134
-	{ .b = 134, .f = B134 },
-#endif
-#ifdef B150
-	{ .b = 150, .f = B150 },
-#endif
-#ifdef B200
-	{ .b = 200, .f = B200 },
-#endif
-#ifdef B300
-	{ .b = 300, .f = B300 },
-#endif
-#ifdef B600
-	{ .b = 600, .f = B600 },
-#endif
-#ifdef B1200
-	{ .b = 1200, .f = B1200 },
-#endif
-#ifdef B1800
-	{ .b = 1800, .f = B1800 },
-#endif
-#ifdef B2400
-	{ .b = 2400, .f = B2400 },
-#endif
-#ifdef B4800
-	{ .b = 4800, .f = B4800 },
-#endif
-#ifdef B9600
-	{ .b = 9600, .f = B9600 },
-#endif
-#ifdef B19200
-	{ .b = 19200, .f = B19200 },
-#endif
-#ifdef B38400
-	{ .b = 38400, .f = B38400 },
-#endif
-#ifdef B57600
-	{ .b = 57600, .f = B57600 },
-#endif
-#ifdef B76800
-	{ .b = 76800, .f = B76800 },
-#endif
-#ifdef B115200
-	{ .b = 115200, .f = B115200 },
-#endif
-#ifdef B153600
-	{ .b = 153600, .f = B153600 },
-#endif
-#ifdef B230400
-	{ .b = 230400, .f = B230400 },
-#endif
-#ifdef B307200
-	{ .b = 307200, .f = B307200 },
-#endif
-#ifdef B460800
-	{ .b = 460800, .f = B460800 },
-#endif
-#ifdef B500000
-	{ .b = 500000, .f = B500000 },
-#endif
-#ifdef B576000
-	{ .b = 576000, .f = B576000 },
-#endif
-#ifdef B614400
-	{ .b = 614400, .f = B614400 },
-#endif
-#ifdef B921600
-	{ .b = 921600, .f = B921600 },
-#endif
-#ifdef B1000000
-	{ .b = 1000000, .f = B1000000 },
-#endif
-#ifdef B1152000
-	{ .b = 1152000, .f = B1152000 },
-#endif
-#ifdef B1500000
-	{ .b = 1500000, .f = B1500000 },
-#endif
-#ifdef B2000000
-	{ .b = 2000000, .f = B2000000 },
-#endif
-#ifdef B2500000
-	{ .b = 2500000, .f = B2500000 },
-#endif
-#ifdef B3000000
-	{ .b = 3000000, .f = B3000000 },
-#endif
-#ifdef B3500000
-	{ .b = 3500000, .f = B3500000 },
-#endif
-#ifdef B4000000
-	{ .b = 4000000, .f = B4000000 },
-#endif
-	{ .b = 0, .f = ~0 } // end
-};
 
 /* returns a combination of Bxxxx flags to set on termios c_cflag depending on
  * the baud rate values supported on the platform. Only exact values match. If
@@ -656,6 +672,22 @@ int set_port(int fd, int baud)
 			return -1;
 	}
 	return tcsetattr(fd, TCSANOW, &tio);
+}
+
+/* returns the currently configured baud rate for the port, or 0 if unknown */
+int get_baud_rate(int fd)
+{
+	struct termios tio;
+	speed_t spd;
+	int idx;
+
+	tcgetattr(fd, &tio);
+	spd = cfgetospeed(&tio);
+
+	for (idx = 0; baud_rates[idx].b; idx++)
+		if (spd == baud_rates[idx].f)
+			return baud_rates[idx].b;
+	return 0;
 }
 
 void list_baud_rates()
@@ -908,14 +940,14 @@ int main(int argc, char **argv)
 		}
 	} while (fd == -1);
 
-	if (!quiet)
-		printf(" Connected.\n");
-
 	ret = set_port(fd, baud);
 	if (ret == -1) {
 		int err = errno;
 
-		fprintf(stderr, "Failed to configure port: %s\n", strerror(errno));
+		if (!quiet)
+			printf(" Failed.\n");
+
+		fprintf(stderr, "Failed to configure port: %s\n", strerror(err));
 		if (!quiet && err == EINVAL) {
 			printf("Hint: maybe the baud rate is not supported by the port.\n");
 			list_baud_rates();
@@ -924,6 +956,9 @@ int main(int argc, char **argv)
 		}
 		exit(3);
 	}
+
+	if (!quiet)
+		printf(" Connected at %d bps.\n", get_baud_rate(fd));
 
 	return 0;
 }
