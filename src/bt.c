@@ -24,6 +24,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/select.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -44,9 +45,14 @@
 #include <unistd.h>
 
 #define MAXPORTS 100
+#define BUFSIZE 1024
 
 #ifndef VERSION
 #define VERSION "0.0.1"
+#endif
+
+#ifndef MIN
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
 #endif
 
 #ifndef CRTSCTS
@@ -94,6 +100,13 @@ struct serial {
 	char *driver;          // driver name (usually a short word)
 	char *model;           // model name when reported
 	time_t ctime;          // device attachment date
+};
+
+struct buffer {
+	int data;              // where data area starts, <0 if output closed.
+	int room;              // where room area starts, <0 if input closed.
+	int len;               // number of bytes in.
+	unsigned char b[BUFSIZE];
 };
 
 const struct {
@@ -611,6 +624,20 @@ void list_baud_rates()
 	printf("termios2 is supported, so any baud rate is supported\n");
 }
 
+/* we have to redefined these ones because GNU libc tries very hard to
+ * prevent us from using those above, and notably purposely creates
+ * redefinition errors to prevent us from loading termios.h
+ */
+static int tcgetattr(int fd, struct termios *tio)
+{
+	return ioctl(fd, TCGETS, tio);
+}
+
+static int tcsetattr(int fd, int ignored, const struct termios *tio)
+{
+	return ioctl(fd, TCSETS, tio);
+}
+
 #else /* TCSETS2 not defined */
 
 /* returns a combination of Bxxxx flags to set on termios c_cflag depending on
@@ -701,6 +728,208 @@ void list_baud_rates()
 }
 
 #endif // TCSETS2 not defined
+
+
+/* send as much as possible of a buffer to the fd */
+void buf_to_fd(int fd, struct buffer *buf)
+{
+	ssize_t ret;
+
+	if (buf->data < 0)
+		return;
+
+	ret = write(fd, buf->b + buf->data, MIN(buf->len, BUFSIZE - buf->data));
+	if (ret < 0) {
+		/* error */
+		if (errno != EAGAIN)
+			buf->data = -1;
+		return;
+	}
+
+	buf->len  -= ret;
+	buf->data += ret;
+	if (buf->data >= BUFSIZE)
+		buf->data = 0;
+	if (!buf->len)
+		buf->data = buf->room = 0;
+}
+
+/* receive as much as possible from the fd to the buffer */
+void fd_to_buf(int fd, struct buffer *buf)
+{
+	ssize_t ret;
+
+	if (buf->room < 0)
+		return;
+
+	ret = read(fd, buf->b + buf->room, MIN(BUFSIZE - buf->len, BUFSIZE - buf->room));
+	if (ret <= 0) {
+		/* error or close */
+		if (ret == 0 || errno != EAGAIN)
+			buf->room = -1;
+		return;
+	}
+
+	buf->len  += ret;
+	buf->room += ret;
+	if (buf->room >= BUFSIZE)
+		buf->room = 0;
+}
+
+/* transfer as many bytes as possible from <in> to <out>, encoding bytes that
+ * are not between <chr_min> and <chr_max>. Input buffer is always realigned
+ * once empty. The forwarding stops before character <esc>. Set esc to -1 to
+ * ignore it. The function always returns zero unless the escape character was
+ * met.
+ */
+int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, int esc)
+{
+	unsigned char c;
+
+	while (in->len && out->len < BUFSIZE) {
+		c = in->b[in->data];
+		if ((int)c == esc)
+			return 1;
+		if (c >= chr_min && c <= chr_max) {
+			/* transfer as-is */
+			out->b[out->room] = c;
+			out->len++;
+			out->room++;
+			if (out->room >= BUFSIZE)
+				out->room = 0;
+		} else {
+			/* transcode to "<0xHH>" (6 chars) */
+			char tmp[7];
+			int i;
+
+			if (out->len + 6 > BUFSIZE)
+				break; // full
+
+			snprintf(tmp, sizeof(tmp), "<0x%02X>", c);
+
+			for (i = 0; i < 6; i++) {
+				out->b[out->room] = tmp[i];
+				out->len++;
+				out->room++;
+				if (out->room >= BUFSIZE)
+					out->room = 0;
+			}
+		}
+		in->len--;
+		in->data++;
+		if (in->data >= BUFSIZE)
+			in->data = 0;
+	}
+	if (!in->len)
+		in->data = in->room = 0;
+	return 0;
+}
+
+/* Bidirectional forwarding between stdin/stdout and fd. We take a great care
+ * of making sure stdin and stdout are both a terminal before switching to raw
+ * mode, in which case they are assumed to be the same. Otherwise they are used
+ * as independent, regular files, allowing to inject/receive from/to stdio.
+ */
+void forward(int fd)
+{
+	int stdio_is_term = 0;
+	fd_set rfds, wfds;
+	struct termios tio_bck;
+	struct buffer port_ibuf = { };
+	struct buffer port_obuf = { };
+	struct buffer user_ibuf = { };
+	struct buffer user_obuf = { };
+
+	if (isatty(0) && isatty(1)) {
+		struct termios tio;
+
+		if (tcgetattr(0, &tio) != 0)
+			die(4, "Failed to retrieve stdio settings.\n");
+
+		memcpy(&tio_bck, &tio, sizeof(tio));
+
+		/* turn the terminal to raw (character mode, no interrupt etc) */
+		tio.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+		tio.c_oflag &= ~OPOST;
+		tio.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+		tio.c_cflag &= ~(CSIZE | PARENB);
+		tio.c_cflag |= CS8;
+
+		if (tcsetattr(0, TCSANOW, &tio) != 0)
+			die(4, "Failed to set stdio to raw mode.\n");
+		stdio_is_term = 1;
+	}
+
+	/* Note: we're going to use select(). We should theorically switch
+	 * both FDs to non-blocking mode. The problem is that it usually is a
+	 * bad idea (files are not pollable, and terminals may misbehave once
+	 * once this is done, and will be hard to fix). Since select() is level
+	 * triggered, it will still report events on blocking devices and on
+	 * files. We must just take care not to try to read more than once on
+	 * each wakeup.
+	 */
+
+	FD_ZERO(&rfds);
+	FD_ZERO(&wfds);
+
+	/* forward until both sides are closed and buffers empty. The terminal
+	 * is detected as closed on either a write error or a read end.
+	 */
+	while (((user_obuf.len + port_ibuf.len || port_ibuf.room >= 0) && (user_obuf.data >= 0)) ||
+	       ((port_obuf.len + user_ibuf.len || user_ibuf.room >= 0) && (port_obuf.data >= 0 && port_ibuf.room >= 0))) {
+		int cnt;
+
+		if (user_ibuf.room >= 0 && user_ibuf.len < BUFSIZE)
+			FD_SET(0, &rfds);
+		else
+			FD_CLR(0, &rfds);
+
+		if (user_obuf.data >= 0 && user_obuf.len > 0)
+			FD_SET(1, &wfds);
+		else
+			FD_CLR(1, &wfds);
+
+		if (port_ibuf.room >= 0 && port_ibuf.len < BUFSIZE)
+			FD_SET(fd, &rfds);
+		else
+			FD_CLR(fd, &rfds);
+
+		if (port_obuf.data >= 0 && port_obuf.len > 0)
+			FD_SET(fd, &wfds);
+		else
+			FD_CLR(fd, &wfds);
+
+		cnt = select(FD_SETSIZE, &rfds, &wfds, NULL, NULL);
+		if (cnt <= 0) // signal
+			continue;
+
+		/* flush pending data */
+		if (FD_ISSET(1, &wfds))
+			buf_to_fd(1, &user_obuf);
+
+		if (FD_ISSET(fd, &wfds))
+			buf_to_fd(fd, &port_obuf);
+
+		/* receive new data */
+		if (FD_ISSET(0, &rfds))
+			fd_to_buf(0, &user_ibuf);
+
+		if (FD_ISSET(fd, &rfds))
+			fd_to_buf(fd, &port_ibuf);
+
+		/* transfer between IN and opposite OUT buffers */
+		if (xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape))
+			break;
+		xfer_buf(&port_ibuf, &user_obuf, chr_min, chr_max, -1);
+	}
+
+	if (stdio_is_term) {
+		/* restore settings and skip current line */
+		if (tcsetattr(0, TCSANOW, &tio_bck) != 0)
+			die(4, "Failed to restore stdio settings. Try 'stty sane'\n");
+		putchar('\n');
+	}
+}
 
 int main(int argc, char **argv)
 {
@@ -959,6 +1188,9 @@ int main(int argc, char **argv)
 
 	if (!quiet)
 		printf(" Connected at %d bps.\n", get_baud_rate(fd));
+
+	/* perform the actual forwarding */
+	forward(fd);
 
 	return 0;
 }
