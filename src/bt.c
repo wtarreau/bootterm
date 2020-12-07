@@ -563,10 +563,13 @@ void list_ports(int portspec)
 
 /* Try to open this port (prepending /dev if the path doesn't start with '/').
  * The FD is returned on success, otherwise -1 with errno set appropriately.
+ * It also deals with the occasional case where the port just appears but the
+ * permissions are not yet there.
  */
 int open_port(const char *port)
 {
 	char ftmp[PATH_MAX];
+	int retry;
 	int fd;
 
 	if (snprintf(ftmp, sizeof(ftmp),
@@ -576,7 +579,17 @@ int open_port(const char *port)
 		return -1;
 	}
 
-	fd = open(ftmp, O_RDWR | O_NONBLOCK | O_NOCTTY);
+	for (retry = 3; retry > 0; retry--) {
+		fd = open(ftmp, O_RDWR | O_NONBLOCK | O_NOCTTY);
+		if (fd == -1 && errno == EPERM) {
+			/* maybe the port was just connected and permissions
+			 * not yet adjusted.
+			 */
+			usleep(100000);
+			continue;
+		}
+		break;
+	}
 	return fd;
 }
 
@@ -1080,6 +1093,9 @@ int main(int argc, char **argv)
 	int do_list = 0;
 	int do_wait_new = 0;
 	int do_print = 0;
+	int forced = 0;
+	int usepath = 0;
+	int retries = 0;
 	int fd, ret;
 
 	progname = strrchr(argv[0], '/');
@@ -1217,13 +1233,26 @@ int main(int argc, char **argv)
 	/* these are the remaining arguments not starting with "-" */
 	port = curr && *curr ? curr : NULL;
 
-	if (port && !parse_int(port, &currport))
+	/* Possibilities:
+	 *   - no port (NULL)          : automatically use last one (=-1)
+	 *   - numeric port (negative) : use that relative port after discovery
+	 *   - numeric port (positive) : use that absolute port after discovery
+	 *   - device path             : use that path without discovery
+	 */
+	if (port && !parse_int(port, &currport)) {
+		/* device path */
 		currport = -1;
+		usepath = 1;
+		forced = 1;
+	}
+
+	if (currport >= 0)
+		forced = 1;
 
 	/* we may need to scan the ports on the system for listing and
 	 * automatic discovery.
 	 */
-	if (!port || currport >= 0 || do_wait_new || do_list) {
+	if (!usepath || do_wait_new || do_list) {
 		/* find the first eligible port */
 		scan_ports();
 	}
@@ -1232,7 +1261,7 @@ int main(int argc, char **argv)
 	 * added since the previous 100ms. We do explicitly support unplugging
 	 * and replugging.
 	 */
-	if (do_wait_new) {
+	if (!usepath && do_wait_new) {
 		int prev_nbports = nbports;
 
 		if (!quiet)
@@ -1244,7 +1273,7 @@ int main(int argc, char **argv)
 			/* detect if a port was disconnected */
 			if (nbports < prev_nbports)
 				prev_nbports = nbports;
-		} while (nbports <= prev_nbports);
+		} while (nbports <= prev_nbports || nbports <= currport);
 
 		/* default bauds for newly connected ports are random, let's
 		 * switch to 115200 if not set.
@@ -1261,12 +1290,17 @@ int main(int argc, char **argv)
 		port = serial_ports[currport].name;
 
 	/* it's time to figure what port we're going to use. Check if the port
-	 * is designated by a number.
+	 * is designated by a number. Note that currport remains -1 if the
+	 * port was forced via a path.
 	 */
-	if (currport < 0) {
-		currport = nbports + currport;
-		if (currport < 0)
-			currport = 0;
+	if (!usepath) {
+		if (currport >= nbports)
+			die(1, "No such port number %d. Use -l to list ports.\n", currport);
+		else if (currport < 0) {
+			currport = nbports + currport;
+			if (currport < 0)
+				currport = -1;
+		}
 	}
 
 	if (do_list) {
@@ -1275,45 +1309,76 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+	/* get a real name for the port (if numeric or absent) and warn unless
+	 * latest port was explicitly requested.
+	 */
+	if (currport >= 0) {
+		if (!port && !do_print && !quiet && !do_wait_new)
+			printf("No port specified, using %s (last registered). Use -l to list ports.\n",
+			       serial_ports[currport].name);
+		port = serial_ports[currport].name;
+	}
+
+	if (do_print) {
+		/* print the selected port and quit */
+		if (port) {
+			printf("%s\n", port);
+			return 0;
+		}
+		return 1;
+	}
+
 	/* try to open the port */
 	do {
-		if (!port && nbports > 0) {
-			port = serial_ports[currport].name;
-			if (!do_print && !quiet && !do_wait_new) {
-				printf("No port specified, using %s (last registered). Use -l to list ports.\n", port);
-			}
-		}
-
-		if (do_print) {
-			/* print the selected port and quit */
-			if (port) {
-				printf("%s\n", port);
-				return 0;
-			}
-			return 1;
-		}
-
-		if (!quiet)
+		if (!quiet && !(forced && do_wait_new))
 			printf("Trying port %s...", port);
 
 		fd = open_port(port);
 
 		if (fd == -1) {
 			/* failures have different fallbacks:
+			 *  - ENOENT when the port is forced and new is set
+			 *    will be retried.
 			 *  - EBUSY, ENODEV, ENOENT, ENOMEM will automatically
-			 *    be retried if the port was chosen automatically.
+			 *    be retried if the port was forced.
 			 *  - other errors always cause an abort
 			 */
-			if ((curr && *curr) && (currport > 0) &&
-			    (errno == EBUSY || errno == ENODEV || errno == ENOENT || errno == ENOMEM)) {
-				currport--;
-				if (!quiet)
-					printf(" Failed! (%s)\n", strerror(errno));
+			if (errno == ENOENT && forced && do_wait_new) {
+				if (!retries)
+					printf("Waiting for port %s to appear.\n", port);
+				if (!baud)
+					baud = 115200;
+				usleep(200000);
+				retries++;
 				continue;
 			}
+
+			if (!forced && (currport > 0) &&
+			    (errno == EBUSY || errno == ENODEV || errno == ENOENT || errno == ENOMEM)) {
+				if (!quiet) {
+					if (forced && do_wait_new)
+						printf("Failed to open port %s: %s\n", port, strerror(errno));
+					else
+						printf(" Failed! (%s)\n", strerror(errno));
+				}
+				currport--;
+				port = serial_ports[currport].name;
+				continue;
+			}
+
+			if (!quiet) {
+				if (forced && do_wait_new)
+					printf("Failed to open port %s: %s\n", port, strerror(errno));
+				else
+					printf(" Failed! (%s)\n", strerror(errno));
+			}
+
 			die(2, "Failed to open port: %s\n", strerror(errno));
 		}
 	} while (fd == -1);
+
+	if (!quiet && (forced && do_wait_new))
+		printf("Trying port %s...", port);
 
 	ret = set_port(fd, baud);
 	if (ret == -1) {
