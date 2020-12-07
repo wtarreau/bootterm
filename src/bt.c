@@ -96,6 +96,9 @@ const char menu_str[] =
 	"  H h ?      display this help\r\n"
 	"  Q q .      quit\r\n"
 	"  P p        show port status\r\n"
+	"  D d        flip DTR pin\r\n"
+	"  R r        flip RTS pin\r\n"
+	"  F f        flip both DTR and RTS pins\r\n"
 	"Enter the escape character again after this menu to use these commands.\r\n"
 	"";
 
@@ -1004,6 +1007,29 @@ void forward(int fd)
 			}
 			else if (c == 'h' || c == 'H' || c == '?') {
 				if (b_puts(&user_obuf, menu_str, strlen(menu_str))) {
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+			}
+			else if (c == 'd' || c == 'D' ||
+				 c == 'f' || c == 'F' ||
+				 c == 'r' || c == 'R') {  /* flip DTR/RTS/both pin */
+				int pins;
+
+				/* note that technically if we can't write a
+				 * response we could flip multiple times but
+				 * practically speaking this will not happen
+				 * and almost never be an issue.
+				 */
+				ioctl(fd, TIOCMGET, &pins);
+				if (c == 'd' || c == 'D' || c == 'f' || c == 'F')
+					pins ^= TIOCM_DTR;
+				if (c == 'r' || c == 'r' || c == 'f' || c == 'F')
+					pins ^= TIOCM_RTS;
+				ioctl(fd, TIOCMSET, &pins);
+
+				show_port(fd, resp, sizeof(resp));
+				if (b_puts(&user_obuf, resp, strlen(resp))) {
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
