@@ -1246,6 +1246,12 @@ int main(int argc, char **argv)
 				prev_nbports = nbports;
 		} while (nbports <= prev_nbports);
 
+		/* default bauds for newly connected ports are random, let's
+		 * switch to 115200 if not set.
+		 */
+		if (!baud)
+			baud = 115200;
+
 		if (!quiet && !do_list && !do_print)
 			list_ports(nbports - 1);
 	}
