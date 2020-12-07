@@ -95,6 +95,7 @@ const char menu_str[] =
 	"BootTerm supports several single-character commands after the escape character:\r\n"
 	"  H h ?      display this help\r\n"
 	"  Q q .      quit\r\n"
+	"  P p        show port status\r\n"
 	"Enter the escape character again after this menu to use these commands.\r\n"
 	"";
 
@@ -880,6 +881,25 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 	return 0;
 }
 
+/* show the port status into <resp> for size <size> in a way suitable for
+ * sending to a raw terminal.
+ */
+void show_port(int fd, char *resp, size_t size)
+{
+	int pins;
+
+	ioctl(fd, TIOCMGET, &pins);
+	snprintf(resp, size,
+	         "\r\nPort name: %s    Speed: %d bps    Pins: %s %s %s %s %s %s\r\n",
+	         port, get_baud_rate(fd),
+	         (pins & TIOCM_DTR) ? "DTR" : "dtr",
+	         (pins & TIOCM_RTS) ? "RTS" : "rts",
+	         (pins & TIOCM_CTS) ? "CTS" : "cts",
+	         (pins & TIOCM_DSR) ? "DSR" : "dsr",
+	         (pins & TIOCM_CD)  ? "CD"  : "cd",
+	         (pins & TIOCM_RI)  ? "RI"  : "ri");
+}
+
 /* Bidirectional forwarding between stdin/stdout and fd. We take a great care
  * of making sure stdin and stdout are both a terminal before switching to raw
  * mode, in which case they are assumed to be the same. Otherwise they are used
@@ -975,6 +995,7 @@ void forward(int fd)
 			fd_to_buf(fd, &port_ibuf);
 
 		if (in_esc) {
+			char resp[BUFSIZE];
 			int c = b_peek(&user_ibuf);
 
 			if (c == 'q' || c == 'Q' || c == '.') {
@@ -983,6 +1004,13 @@ void forward(int fd)
 			}
 			else if (c == 'h' || c == 'H' || c == '?') {
 				if (b_puts(&user_obuf, menu_str, strlen(menu_str))) {
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+			}
+			else if (c == 'p' || c == 'P') { /* show port status */
+				show_port(fd, resp, sizeof(resp));
+				if (b_puts(&user_obuf, resp, strlen(resp))) {
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
