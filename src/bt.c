@@ -89,6 +89,15 @@ const char usage_msg[] =
 	"number, port 0 is automatically used.\n"
 	"";
 
+/* Note that we need CRLF in raw mode */
+const char menu_str[] =
+	"\r\n"
+	"BootTerm supports several single-character commands after the escape character:\r\n"
+	"  H h ?      display this help\r\n"
+	"  Q q .      quit\r\n"
+	"Enter the escape character again after this menu to use these commands.\r\n"
+	"";
+
 enum cap_mode {
 	CAP_NONE = 0,
 	CAP_FIXED,
@@ -886,6 +895,7 @@ void forward(int fd)
 	struct buffer user_ibuf = { };
 	struct buffer user_obuf = { };
 	int in_utf8 = 0;
+	int in_esc = 0;
 
 	if (isatty(0) && isatty(1)) {
 		struct termios tio;
@@ -964,9 +974,38 @@ void forward(int fd)
 		if (FD_ISSET(fd, &rfds))
 			fd_to_buf(fd, &port_ibuf);
 
+		if (in_esc) {
+			int c = b_peek(&user_ibuf);
+
+			if (c == 'q' || c == 'Q' || c == '.') {
+				/* quit */
+				break;
+			}
+			else if (c == 'h' || c == 'H' || c == '?') {
+				if (b_puts(&user_obuf, menu_str, strlen(menu_str))) {
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+			}
+			else if (c == escape) {
+				/* two escape chars cause one to be sent */
+				if (b_putchar(&port_obuf, c)) {
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+			}
+			else if (c >= 0 && b_putchar(&port_obuf, escape)) {
+				/* other chars will be sent as-is, preceeded by escape */
+				in_esc = 0;
+			}
+		}
+
 		/* transfer between IN and opposite OUT buffers */
-		if (xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape, NULL))
-			break;
+		if (!in_esc && xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape, NULL)) {
+			/* we stopped in front of the escape character */
+			b_skip(&user_ibuf, 1);
+			in_esc = 1;
+		}
 		xfer_buf(&port_ibuf, &user_obuf, chr_min, chr_max, -1, &in_utf8);
 	}
 
@@ -1233,8 +1272,25 @@ int main(int argc, char **argv)
 		exit(3);
 	}
 
-	if (!quiet)
-		printf(" Connected at %d bps.\n", get_baud_rate(fd));
+	if (!quiet) {
+		char esc[8];
+
+		printf(" Connected to %s at %d bps.\n", port, get_baud_rate(fd));
+
+		if (escape < 32) {
+			switch (escape) {
+			case  9: snprintf(esc, sizeof(esc), "Tab"); break;
+			case 27: snprintf(esc, sizeof(esc), "Esc"); break;
+			default: snprintf(esc, sizeof(esc), "Ctrl-%c", escape + '@'); break;
+			}
+		}
+		else if (isprint(escape))
+			snprintf(esc, sizeof(esc), "%c", escape);
+		else
+			snprintf(esc, sizeof(esc), "0x%02X", escape);
+
+		printf("Escape character is '%s'. Use escape followed by '?' for help.\n", esc);
+	}
 
 	/* perform the actual forwarding */
 	forward(fd);
