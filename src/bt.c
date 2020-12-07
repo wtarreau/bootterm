@@ -626,6 +626,10 @@ int set_port(int fd, int baud)
 		tio.c_ospeed = tio.c_ispeed = baud;
 	}
 
+	tio.c_iflag = 0;
+	tio.c_oflag = 0;
+	tio.c_lflag = 0;
+
 	return ioctl(fd, TCSETS2, &tio);
 }
 
@@ -724,6 +728,10 @@ int set_port(int fd, int baud)
 		if (cfsetispeed(&tio, baud_flag) == -1)
 			return -1;
 	}
+
+	tio.c_iflag = 0;
+	tio.c_oflag = 0;
+	tio.c_lflag = 0;
 	return tcsetattr(fd, TCSANOW, &tio);
 }
 
