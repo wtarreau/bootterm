@@ -730,6 +730,60 @@ void list_baud_rates()
 #endif // TCSETS2 not defined
 
 
+/* returns the first pending char in the buffer, or <0 if none */
+int b_peek(const struct buffer *buf)
+{
+	if (!buf->len)
+		return -1;
+	return buf->b[buf->data];
+}
+
+/* inserts one character into the buffer if possible. Returns the number of chars
+ * added (0 or 1).
+ */
+int b_putchar(struct buffer *buf, int c)
+{
+	if (buf->len >= BUFSIZE)
+		return 0;
+	buf->b[buf->room] = c;
+	buf->len++;
+	buf->room++;
+	if (buf->room >= BUFSIZE)
+		buf->room = 0;
+	return 1;
+}
+
+/* atomically inserts one string into the buffer if possible. Returns the
+ * number of chars added (0 or len).
+ */
+int b_puts(struct buffer *buf, const char *str, int len)
+{
+	int i;
+
+	if (buf->len + len >= BUFSIZE)
+		return 0;
+
+	for (i = 0; i < len; i++) {
+		buf->b[buf->room] = str[i];
+		buf->len++;
+		buf->room++;
+		if (buf->room >= BUFSIZE)
+			buf->room = 0;
+	}
+	return len;
+}
+
+/* skips <num> characters from the buffer. <num> must not be larger than len */
+void b_skip(struct buffer *buf, int num)
+{
+	buf->len  -= num;
+	buf->data += num;
+	if (buf->data >= BUFSIZE)
+		buf->data = 0;
+	if (!buf->len)
+		buf->data = buf->room = 0;
+}
+
 /* send as much as possible of a buffer to the fd */
 void buf_to_fd(int fd, struct buffer *buf)
 {
@@ -746,12 +800,7 @@ void buf_to_fd(int fd, struct buffer *buf)
 		return;
 	}
 
-	buf->len  -= ret;
-	buf->data += ret;
-	if (buf->data >= BUFSIZE)
-		buf->data = 0;
-	if (!buf->len)
-		buf->data = buf->room = 0;
+	b_skip(buf, ret);
 }
 
 /* receive as much as possible from the fd to the buffer */
@@ -785,11 +834,11 @@ void fd_to_buf(int fd, struct buffer *buf)
  */
 int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, int esc, int *in_utf8)
 {
-	unsigned char c;
+	int c;
 
 	while (in->len && out->len < BUFSIZE) {
-		c = in->b[in->data];
-		if ((int)c == esc)
+		c = b_peek(in);
+		if (c == esc)
 			return 1;
 
 		/* only transfer the unprotected chars, unless they belong to
@@ -800,28 +849,14 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 		if (c >= chr_min && c <= chr_max &&
 		    (!in_utf8 || *in_utf8 || c <= 0x80 || c >= 0x9f)) {
 			/* transfer as-is */
-			out->b[out->room] = c;
-			out->len++;
-			out->room++;
-			if (out->room >= BUFSIZE)
-				out->room = 0;
+			b_putchar(out, c);
 		} else {
 			/* transcode to "<0xHH>" (6 chars) */
 			char tmp[7];
-			int i;
-
-			if (out->len + 6 > BUFSIZE)
-				break; // full
 
 			snprintf(tmp, sizeof(tmp), "<0x%02X>", c);
-
-			for (i = 0; i < 6; i++) {
-				out->b[out->room] = tmp[i];
-				out->len++;
-				out->room++;
-				if (out->room >= BUFSIZE)
-					out->room = 0;
-			}
+			if (!b_puts(out, tmp, 6))
+				break;
 		}
 
 		if (in_utf8) {
@@ -831,13 +866,8 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 				*in_utf8 = 1;
 		}
 
-		in->len--;
-		in->data++;
-		if (in->data >= BUFSIZE)
-			in->data = 0;
+		b_skip(in, 1);
 	}
-	if (!in->len)
-		in->data = in->room = 0;
 	return 0;
 }
 
