@@ -779,10 +779,11 @@ void fd_to_buf(int fd, struct buffer *buf)
 /* transfer as many bytes as possible from <in> to <out>, encoding bytes that
  * are not between <chr_min> and <chr_max>. Input buffer is always realigned
  * once empty. The forwarding stops before character <esc>. Set esc to -1 to
- * ignore it. The function always returns zero unless the escape character was
- * met.
+ * ignore it. If in_utf8 is not null, it will be either 0 or 1 depending on
+ * the sequence. The function always returns zero unless the escape character
+ * was met.
  */
-int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, int esc)
+int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, int esc, int *in_utf8)
 {
 	unsigned char c;
 
@@ -790,7 +791,14 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 		c = in->b[in->data];
 		if ((int)c == esc)
 			return 1;
-		if (c >= chr_min && c <= chr_max) {
+
+		/* only transfer the unprotected chars, unless they belong to
+		 * the unescaped C1 set of control characters which tends to
+		 * make some terminals choke and which easily happen when using
+		 * incorrect baud rates.
+		 */
+		if (c >= chr_min && c <= chr_max &&
+		    (!in_utf8 || *in_utf8 || c <= 0x80 || c >= 0x9f)) {
 			/* transfer as-is */
 			out->b[out->room] = c;
 			out->len++;
@@ -815,6 +823,14 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 					out->room = 0;
 			}
 		}
+
+		if (in_utf8) {
+			if (*in_utf8 && (c < 0x80 || c >= 0xc0))
+				*in_utf8 = 0;
+			if (!*in_utf8 && c >= 0xc0 && c <= 0xf7)
+				*in_utf8 = 1;
+		}
+
 		in->len--;
 		in->data++;
 		if (in->data >= BUFSIZE)
@@ -839,6 +855,7 @@ void forward(int fd)
 	struct buffer port_obuf = { };
 	struct buffer user_ibuf = { };
 	struct buffer user_obuf = { };
+	int in_utf8 = 0;
 
 	if (isatty(0) && isatty(1)) {
 		struct termios tio;
@@ -918,9 +935,9 @@ void forward(int fd)
 			fd_to_buf(fd, &port_ibuf);
 
 		/* transfer between IN and opposite OUT buffers */
-		if (xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape))
+		if (xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape, NULL))
 			break;
-		xfer_buf(&port_ibuf, &user_obuf, chr_min, chr_max, -1);
+		xfer_buf(&port_ibuf, &user_obuf, chr_min, chr_max, -1, &in_utf8);
 	}
 
 	if (stdio_is_term) {
