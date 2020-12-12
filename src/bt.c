@@ -1336,6 +1336,9 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if (!port)
+		die(2, "No port found nor specified. Use -h for help.\n");
+
 	/* try to open the port */
 	do {
 		if (!quiet && !(forced && do_wait_new))
