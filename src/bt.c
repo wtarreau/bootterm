@@ -59,6 +59,10 @@
 #define CRTSCTS 0
 #endif
 
+#ifndef O_NOFOLLOW
+#define O_NOFOLLOW 0
+#endif
+
 const char version_str[] =
 	"BootTerm " VERSION " -- the terminal written for users by its users\n"
 #if defined(TCGETS2) && !defined(NO_TCGETS2)
@@ -80,7 +84,7 @@ const char usage_msg[] =
 	"  -m <min>     specify lowest printable character  (default: 0)\n"
 	"  -M <max>     specify highest printable character (default: 255)\n"
 	"  -b <baud>    specify serial port's baud rate (default=0: port's current)\n"
-	"  -c {none|fixed|timed} capture to file (default: none)\n"
+	"  -c {none|fixed|timed} enable capture to file (BT_CAPTURE_MODE)\n"
 	"  -e <escape>  escape character or ASCII code  (default: 29 = Ctrl-])\n"
 	"  -f <fmt>     capture file name (default: 'bootterm-%%Y%%m%%d-%%H%%M%%S.log')\n"
 	"  -V           show version and license\n"
@@ -103,6 +107,7 @@ const char menu_str[] =
 	"  R r        flip RTS pin\r\n"
 	"  F f        flip both DTR and RTS pins\r\n"
 	"  B b        send break\r\n"
+	"  C c        enable / disable capture\r\n"
 	"Enter the escape character again after this menu to use these commands.\r\n"
 	"";
 
@@ -237,6 +242,7 @@ const struct {
 
 /* operating modes */
 struct serial serial_ports[MAXPORTS];
+const char *cap_mode_str = NULL;
 enum cap_mode cap_mode = CAP_NONE;
 const char *capture_fmt = "bootterm-%Y%m%d-%H%M%S.log";
 unsigned char escape  = 0x1d; // Ctrl-]
@@ -247,6 +253,10 @@ int nbports = 0;
 int currport = -1; // last one
 int quiet = 0;
 int baud = 0;
+
+char cap_name[PATH_MAX];
+int cap_fd = -1; // -1 = no capture in progress
+time_t last_cap_sec = 0;
 
 /* list made of port names (without slashes) delimited by commas */
 char *exclude_list = NULL;
@@ -475,6 +485,42 @@ int file_exists(const char *format, ...)
 		return stat(ftmp, &st) == 0;
 
 	return 0;
+}
+
+/* updates the capture file name if needed, and if it changed, closes the
+ * current capture and opens a new one.
+ */
+void set_capture_name()
+{
+	char new_name[PATH_MAX];
+	time_t now;
+
+	if (cap_mode == CAP_NONE && cap_fd == -1)
+		return;
+
+	if (cap_mode == CAP_FIXED && cap_fd >= 0)
+		return;
+
+	now = time(NULL);
+	if (now == last_cap_sec)
+		return;
+
+	if (cap_mode == CAP_NONE ||
+	    !strftime(new_name, sizeof(new_name), capture_fmt, localtime(&now))) {
+		if (cap_fd >= 0)
+			close(cap_fd);
+		cap_fd = -1;
+		return;
+	}
+
+	if (cap_fd == -1 || strcmp(new_name, cap_name) != 0) {
+		if (cap_fd >= 0)
+			close(cap_fd);
+		memcpy(cap_name, new_name, sizeof(cap_name));
+		cap_fd = open(cap_name, O_APPEND | O_CREAT | O_WRONLY | O_NOFOLLOW, 0666);
+		/* note that cap_fd==-1 is handled as a temporarily disabled capture */
+	}
+	last_cap_sec = now;
 }
 
 /* sorting function for serial ports: ensures the most recently registered port
@@ -948,7 +994,7 @@ void buf_to_fd(int fd, struct buffer *buf)
 }
 
 /* receive as much as possible from the fd to the buffer */
-void fd_to_buf(int fd, struct buffer *buf)
+void fd_to_buf(int fd, struct buffer *buf, int capfd)
 {
 	ssize_t ret;
 
@@ -961,6 +1007,13 @@ void fd_to_buf(int fd, struct buffer *buf)
 		if (ret == 0 || errno != EAGAIN)
 			buf->room = -1;
 		return;
+	}
+
+	if (capfd >= 0) {
+		/* a capture to this FD was requested, captures are made in
+		 * blocking mode. capfd on return only used to shut up gcc.
+		 */
+		capfd = write(capfd, buf->b + buf->room, ret);
 	}
 
 	buf->len  += ret;
@@ -1114,6 +1167,8 @@ void forward(int fd)
 		if (cnt <= 0) // signal
 			continue;
 
+		set_capture_name();
+
 		/* flush pending data */
 		if (FD_ISSET(1, &wfds))
 			buf_to_fd(1, &user_obuf);
@@ -1123,10 +1178,10 @@ void forward(int fd)
 
 		/* receive new data */
 		if (FD_ISSET(0, &rfds))
-			fd_to_buf(0, &user_ibuf);
+			fd_to_buf(0, &user_ibuf, -1);
 
 		if (FD_ISSET(fd, &rfds))
-			fd_to_buf(fd, &port_ibuf);
+			fd_to_buf(fd, &port_ibuf, cap_fd);
 
 		if (in_esc) {
 			char resp[BUFSIZE];
@@ -1168,6 +1223,20 @@ void forward(int fd)
 			else if (c == 'b' || c == 'B') {
 				tcsendbreak(fd, 0);
 				if (b_puts(&user_obuf, "Sent break\r\n", 12)) {
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+			}
+			else if (c == 'c' || c == 'C') {
+				if (cap_mode == CAP_NONE &&
+				    b_puts(&user_obuf, "Enabling capture\r\n", 18)) {
+					cap_mode = CAP_FIXED;
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+				else if (cap_mode > CAP_NONE &&
+				         b_puts(&user_obuf, "Disabling capture\r\n", 19)) {
+					cap_mode = CAP_NONE;
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
@@ -1236,6 +1305,8 @@ int main(int argc, char **argv)
 	set_port_list(&restrict_list, "scan.restrict-ports");
 	do_wait_any = !!get_conf("scan.wait-any");
 	do_wait_new = !do_wait_any && !!get_conf("scan.wait-new");
+
+	cap_mode_str = get_conf("capture.mode");
 
 	/* simple parsing loop, stops before isolated '-', before words
 	 * starting with other chars, but after '--', in which case <curr>
@@ -1314,14 +1385,7 @@ int main(int argc, char **argv)
 		case 'c':
 			if (!arg)
 				die(1, "missing argument for -%c\n", opt);
-			if (strcmp(arg, "none") == 0)
-				cap_mode = CAP_NONE;
-			else if (strcmp(arg, "fixed") == 0)
-				cap_mode = CAP_FIXED;
-			else if (strcmp(arg, "timed") == 0)
-				cap_mode = CAP_TIMED;
-			else
-				die(1, "unknown argument for -%c\n", opt);
+			cap_mode_str = arg;
 			arg = NULL;
 			break;
 
@@ -1369,6 +1433,17 @@ int main(int argc, char **argv)
 
 	/* these are the remaining arguments not starting with "-" */
 	port = curr && *curr ? curr : NULL;
+
+	if (cap_mode_str) {
+		if (strcmp(cap_mode_str, "none") == 0)
+			cap_mode = CAP_NONE;
+		else if (strcmp(cap_mode_str, "fixed") == 0)
+			cap_mode = CAP_FIXED;
+		else if (strcmp(cap_mode_str, "timed") == 0)
+			cap_mode = CAP_TIMED;
+		else
+			die(1, "Unknown capture mode <%s>. Use -h for help.\n", cap_mode_str);
+	}
 
 	/* Possibilities:
 	 *   - no port (NULL)          : automatically use last one (=-1)
