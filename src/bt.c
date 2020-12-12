@@ -88,6 +88,8 @@ const char usage_msg[] =
 	"Ports are sorted in reverse registration order so that port 0 is the most\n"
 	"recently added one. A number may be set instead of the port. With no name nor\n"
 	"number, port 0 is automatically used.\n"
+	"Comma-delimited lists of ports to exclude/include/restrict may be passed in\n"
+	"BT_SCAN_EXCLUDE_PORTS, BT_SCAN_INCLUDE_PORTS, and BT_SCAN_RESTRICT_PORTS.\n"
 	"";
 
 /* Note that we need CRLF in raw mode */
@@ -246,6 +248,11 @@ int currport = -1; // last one
 int quiet = 0;
 int baud = 0;
 
+/* list made of port names (without slashes) delimited by commas */
+char *exclude_list = NULL;
+char *include_list = NULL;
+char *restrict_list = NULL;
+
 /* display the message and exit with the code */
 void die(int code, const char *format, ...)
 {
@@ -307,6 +314,91 @@ int parse_byte(const char *in, unsigned char *out)
 	ret = strtol(in, &endptr, 0);
 	*out = ret;
 	return *endptr == 0 && ret >= 0 && ret <= 255;
+}
+
+/* Look for item <item> in comma-delimited list <list>. A null list is empty.
+ * <item> may not contain commas. Returns true if found, false otherwise.
+ */
+int in_list(const char *list, const char *item)
+{
+	size_t ilen = strlen(item);
+
+	while (list && *list) {
+		if (strncmp(list, item, ilen) == 0 &&
+		    (list[ilen] == 0 || list[ilen] == ','))
+			return 1;
+
+		while (*list && *(list++) != ',')
+			;
+	}
+	return 0;
+}
+
+/* returns the value of configuration variable <var_name> or NULL if not found.
+ * The variable is first looked up in the environment by prepending "BT_", by
+ * turning all letters to upper case, and changing "." and "-" to "_". Example:
+ * "scan.exclude-ports" becomes "BT_SCAN_EXCLUDE_PORTS".
+ */
+const char *get_conf(const char *var_name)
+{
+	const char *value = NULL;
+
+	if (strlen(var_name) + 3 < 256) {
+		char envname[256];
+		char *d, c;
+		const char *s;
+
+		strcpy(envname, "BT_");
+		d = envname + 3;
+		s = var_name;
+		do {
+			c = *(s++);
+			if (c == '.' || c == '-')
+				c = '_';
+			else if (islower(c))
+				c = toupper(c);
+			*(d++) = c;
+		} while (c);
+		value = getenv(envname);
+	}
+
+	/* TODO: implement an option to perform a look-up in a config file if
+	 * value is still NULL.
+	 */
+
+	return value;
+}
+
+void set_port_list(char **list, const char *var_name)
+{
+	const char *var = get_conf(var_name);
+	char *value, *s, *d;
+
+	free(*list);
+	*list = NULL;
+
+	value = var ? strdup(var) : NULL;
+	if (!value)
+		return;
+
+	/* strip off "/dev/" in front of each name, and trim all blanks */
+	d = s = value;
+	while (*s) {
+	        while (isblank((int)(unsigned char)*s))
+			s++;
+		if (strncmp(s, "/dev/", 5) == 0) {
+			s += 5;
+			continue;
+		}
+		*d++ = *s++;
+	}
+	*d++ = 0;
+
+	if (!*value) {
+		free(value);
+		value = NULL;
+	}
+	*list = value;
 }
 
 /* read one line from file name assembled from <format>, return the contents
@@ -473,6 +565,12 @@ int scan_ports()
 		if (!ent)
 			break;
 
+		if (in_list(exclude_list, ent->d_name))
+			continue;
+
+		if (restrict_list && !in_list(restrict_list, ent->d_name))
+			continue;
+
 		link = driver = model = name = NULL;
 		snprintf(ftmp, sizeof(ftmp), "/sys/class/tty/%s/device/.", ent->d_name);
 		if (stat(ftmp, &st) == 0) {
@@ -487,20 +585,25 @@ int scan_ports()
 			    !file_exists("/sys/class/tty/%s/device/resource", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/of_node", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/interface", ent->d_name) &&
-			    !file_exists("/sys/class/tty/%s/device/port_number", ent->d_name))
+			    !file_exists("/sys/class/tty/%s/device/port_number", ent->d_name) &&
+			    !in_list(include_list, ent->d_name))
 				goto fail;
 
 			link = read_link_from("/sys/class/tty/%s/device/driver", ent->d_name);
-			if (!link)
-				goto fail;
-			driver = strrchr(link, '/');
-			if (driver)
-				driver++;
-			else
-				driver = link;
+			if (link) {
+				driver = strrchr(link, '/');
+				if (driver)
+					driver++;
+				else
+					driver = link;
 
-			driver = strdup(driver);
-			free(link); link = NULL;
+				driver = strdup(driver);
+				free(link); link = NULL;
+			} else if (!in_list(include_list, ent->d_name)) {
+				driver = strdup("");
+			}
+			else
+				goto fail;
 
 			name = strdup(ent->d_name);
 			if (!name)
@@ -1126,6 +1229,11 @@ int main(int argc, char **argv)
 		progname = argv[0];
 	else
 		progname++;
+
+	/* read environment variables */
+	set_port_list(&exclude_list,  "scan.exclude-ports");
+	set_port_list(&include_list,  "scan.include-ports");
+	set_port_list(&restrict_list, "scan.restrict-ports");
 
 	/* simple parsing loop, stops before isolated '-', before words
 	 * starting with other chars, but after '--', in which case <curr>
