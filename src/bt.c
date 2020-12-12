@@ -100,6 +100,7 @@ const char menu_str[] =
 	"  D d        flip DTR pin\r\n"
 	"  R r        flip RTS pin\r\n"
 	"  F f        flip both DTR and RTS pins\r\n"
+	"  B b        send break\r\n"
 	"Enter the escape character again after this menu to use these commands.\r\n"
 	"";
 
@@ -669,6 +670,11 @@ static int tcsetattr(int fd, int ignored, const struct termios *tio)
 	return ioctl(fd, TCSETS, tio);
 }
 
+static int tcsendbreak(int fd, int duration)
+{
+	return ioctl(fd, TCSBRK, duration);
+}
+
 #else /* TCSETS2 not defined */
 
 /* returns a combination of Bxxxx flags to set on termios c_cflag depending on
@@ -1052,6 +1058,13 @@ void forward(int fd)
 
 				show_port(fd, resp, sizeof(resp));
 				if (b_puts(&user_obuf, resp, strlen(resp))) {
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+			}
+			else if (c == 'b' || c == 'B') {
+				tcsendbreak(fd, 0);
+				if (b_puts(&user_obuf, "Sent break\r\n", 12)) {
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
