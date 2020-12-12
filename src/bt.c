@@ -75,6 +75,7 @@ const char usage_msg[] =
 	"  -q           quiet mode: do not report events\n"
 	"  -p           only print selected port name and quit\n"
 	"  -l           list detected serial ports and quit\n"
+	"  -a           wait for a port to be available (BT_WAIT_ANY)\n"
 	"  -n           wait for a new port to be registered (BT_WAIT_NEW)\n"
 	"  -m <min>     specify lowest printable character  (default: 0)\n"
 	"  -M <max>     specify highest printable character (default: 255)\n"
@@ -1100,6 +1101,7 @@ int main(int argc, char **argv)
 	int idx, opt;
 	int do_list = 0;
 	int do_wait_new = 0;
+	int do_wait_any = 0;
 	int do_print = 0;
 	int forced = 0;
 	int usepath = 0;
@@ -1168,8 +1170,12 @@ int main(int argc, char **argv)
 			quiet = 1;
 			break;
 
+		case 'a':
+			do_wait_any = 1; do_wait_new = 0;
+			break;
+
 		case 'n':
-			do_wait_new = 1;
+			do_wait_new = 1; do_wait_any = 0;
 			break;
 
 		case 'b':
@@ -1257,15 +1263,79 @@ int main(int argc, char **argv)
 	if (currport >= 0)
 		forced = 1;
 
-	if (!do_wait_new && getenv("BT_WAIT_NEW"))
-		do_wait_new = 1;
+	if (!do_wait_any && !do_wait_new) {
+		if (getenv("BT_WAIT_ANY"))
+			do_wait_any = 1;
+		else if (getenv("BT_WAIT_NEW"))
+			do_wait_new = 1;
+	}
 
 	/* we may need to scan the ports on the system for listing and
 	 * automatic discovery.
 	 */
-	if (!usepath || do_wait_new || do_list) {
+	if (!usepath || do_wait_any || do_wait_new || do_list) {
 		/* find the first eligible port */
 		scan_ports();
+	}
+
+	/* when waiting for a port to be available, we check that the port
+	 * specified in the path is listed, or that the requested number is
+	 * available, otherwise that any port is available.
+	 */
+	if (do_wait_any) {
+		if (currport >= 0 && currport < nbports) {
+			port = serial_ports[currport].name;
+			if (!quiet)
+				printf("Port %d (%s) available, using it.\n", currport, port);
+			goto done_scan;
+		}
+
+		if (usepath) {
+			fd = open_port(port);
+			if (fd < 0) {
+				/* default bauds for newly connected ports are random, let's
+				 * switch to 115200 if not set.
+				 */
+				if (!baud)
+					baud = 115200;
+
+				if (!quiet)
+					printf("Waiting for port %s to appear...\n", port);
+
+				do {
+					usleep(100000);
+					fd = open_port(port);
+				} while (fd == -1);
+			}
+
+			if (!quiet)
+				printf("Trying port %s...", port);
+			goto go_with_fd;
+		}
+
+		if (!nbports) {
+			if (!quiet)
+				printf("Waiting for one port to appear...\n");
+
+			/* default bauds for newly connected ports are random, let's
+			 * switch to 115200 if not set.
+			 */
+			if (!baud)
+				baud = 115200;
+
+			do {
+				usleep(100000);
+				scan_ports();
+			} while (!nbports);
+		}
+
+		currport = nbports - 1;
+		port = serial_ports[currport].name;
+		if (!quiet)
+			printf("Port %s available, using it.\n", port);
+
+		if (!quiet && !do_list && !do_print)
+			list_ports(nbports - 1);
 	}
 
 	/* when waiting for new ports, we wait for at least one port to be
@@ -1314,6 +1384,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+done_scan:
 	if (do_list) {
 		/* list available ports and quit */
 		list_ports(-1);
@@ -1340,7 +1411,7 @@ int main(int argc, char **argv)
 	}
 
 	if (!port)
-		die(2, "No port found nor specified. Use -h for help.\n");
+		die(2, "No port found nor specified. Use -a to wait or -h for help.\n");
 
 	/* try to open the port */
 	do {
@@ -1394,6 +1465,7 @@ int main(int argc, char **argv)
 	if (!quiet && (forced && do_wait_new))
 		printf("Trying port %s...", port);
 
+go_with_fd:
 	ret = set_port(fd, baud);
 	if (ret == -1) {
 		int err = errno;
