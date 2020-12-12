@@ -75,8 +75,8 @@ const char usage_msg[] =
 	"  -q           quiet mode: do not report events\n"
 	"  -p           only print selected port name and quit\n"
 	"  -l           list detected serial ports and quit\n"
-	"  -a           wait for a port to be available (BT_WAIT_ANY)\n"
-	"  -n           wait for a new port to be registered (BT_WAIT_NEW)\n"
+	"  -a           wait for a port to be available (BT_SCAN_WAIT_ANY)\n"
+	"  -n           wait for a new port to be registered (BT_SCAN_WAIT_NEW)\n"
 	"  -m <min>     specify lowest printable character  (default: 0)\n"
 	"  -M <max>     specify highest printable character (default: 255)\n"
 	"  -b <baud>    specify serial port's baud rate (default=0: port's current)\n"
@@ -1234,6 +1234,8 @@ int main(int argc, char **argv)
 	set_port_list(&exclude_list,  "scan.exclude-ports");
 	set_port_list(&include_list,  "scan.include-ports");
 	set_port_list(&restrict_list, "scan.restrict-ports");
+	do_wait_any = !!get_conf("scan.wait-any");
+	do_wait_new = !do_wait_any && !!get_conf("scan.wait-new");
 
 	/* simple parsing loop, stops before isolated '-', before words
 	 * starting with other chars, but after '--', in which case <curr>
@@ -1383,13 +1385,6 @@ int main(int argc, char **argv)
 
 	if (currport >= 0)
 		forced = 1;
-
-	if (!do_wait_any && !do_wait_new) {
-		if (getenv("BT_WAIT_ANY"))
-			do_wait_any = 1;
-		else if (getenv("BT_WAIT_NEW"))
-			do_wait_new = 1;
-	}
 
 	/* we may need to scan the ports on the system for listing and
 	 * automatic discovery.
