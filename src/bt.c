@@ -75,7 +75,7 @@ const char usage_msg[] =
 	"  -q           quiet mode: do not report events\n"
 	"  -p           only print selected port name and quit\n"
 	"  -l           list detected serial ports and quit\n"
-	"  -n           wait for a new port to be registered\n"
+	"  -n           wait for a new port to be registered (BT_WAIT_NEW)\n"
 	"  -m <min>     specify lowest printable character  (default: 0)\n"
 	"  -M <max>     specify highest printable character (default: 255)\n"
 	"  -b <baud>    specify serial port's baud rate (default=0: port's current)\n"
@@ -1256,6 +1256,9 @@ int main(int argc, char **argv)
 
 	if (currport >= 0)
 		forced = 1;
+
+	if (!do_wait_new && getenv("BT_WAIT_NEW"))
+		do_wait_new = 1;
 
 	/* we may need to scan the ports on the system for listing and
 	 * automatic discovery.
