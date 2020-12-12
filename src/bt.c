@@ -48,7 +48,7 @@
 #define BUFSIZE 1024
 
 #ifndef VERSION
-#define VERSION "0.0.1"
+#define VERSION "0.1.0"
 #endif
 
 #ifndef MIN
