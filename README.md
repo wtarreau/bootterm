@@ -139,7 +139,7 @@ Alternately, it is possible to restrict the port enumeration to only a specific 
 
 ### Changing the baud rate
 
-By default, the port's baud rate is maintained for ports that were already present before `bt` started. It will be forced to 115200 bauds for newly discovered ports. However the speed may be forced using `-b` followed by a speed. Example below with a NodeMCU module:
+By default, the port's baud rate is maintained for ports that were already present before `bt` started. It will be forced to 115200 bauds for newly discovered ports. However the speed may be always forced using the `BT_PORT_BAUD_RATE` environment variable, or by using `-b` followed by a speed. Example below with a NodeMCU module:
 
 ```
 $ bt -b 74880

@@ -83,7 +83,7 @@ const char usage_msg[] =
 	"  -n           wait for a new port to be registered (BT_SCAN_WAIT_NEW)\n"
 	"  -m <min>     specify lowest printable character  (default: 0)\n"
 	"  -M <max>     specify highest printable character (default: 255)\n"
-	"  -b <baud>    specify serial port's baud rate (default=0: port's current)\n"
+	"  -b <baud>    specify baud rate (BT_PORT_BAUD_RATE, default: 0=port's current)\n"
 	"  -c {none|fixed|timed} enable capture to file (BT_CAPTURE_MODE)\n"
 	"  -e <escape>  escape character or ASCII code  (default: 29 = Ctrl-])\n"
 	"  -f <fmt>     capture file name (default: 'bootterm-%%Y%%m%%d-%%H%%M%%S.log')\n"
@@ -91,7 +91,7 @@ const char usage_msg[] =
 	"\n"
 	"Ports are sorted in reverse registration order so that port 0 is the most\n"
 	"recently added one. A number may be set instead of the port. With no name nor\n"
-	"number, last port is used.\n"
+	"number, last port is used. Use '?' or 'help' in baud rate to list them all.\n"
 	"Comma-delimited lists of ports to exclude/include/restrict may be passed in\n"
 	"BT_SCAN_EXCLUDE_PORTS, BT_SCAN_INCLUDE_PORTS, and BT_SCAN_RESTRICT_PORTS.\n"
 	"";
@@ -242,6 +242,7 @@ const struct {
 
 /* operating modes */
 struct serial serial_ports[MAXPORTS];
+const char *baud_rate_str = NULL;
 const char *cap_mode_str = NULL;
 enum cap_mode cap_mode = CAP_NONE;
 const char *capture_fmt = "bootterm-%Y%m%d-%H%M%S.log";
@@ -1308,6 +1309,7 @@ int main(int argc, char **argv)
 	do_wait_any = !!get_conf("scan.wait-any");
 	do_wait_new = !do_wait_any && !!get_conf("scan.wait-new");
 
+	baud_rate_str = get_conf("port.baud-rate");
 	cap_mode_str = get_conf("capture.mode");
 
 	/* simple parsing loop, stops before isolated '-', before words
@@ -1375,12 +1377,9 @@ int main(int argc, char **argv)
 			break;
 
 		case 'b':
-			if (strcmp(arg, "?") == 0 || strcmp(arg, "help") == 0) {
-				list_baud_rates();
-				exit(0);
-			}
-			if (!parse_int(arg, &baud))
-				die(1, "failed to parse argument for -%c\n", opt);
+			if (!arg)
+				die(1, "missing argument for -%c\n", opt);
+			baud_rate_str = arg;
 			arg = NULL;
 			break;
 
@@ -1445,6 +1444,16 @@ int main(int argc, char **argv)
 			cap_mode = CAP_TIMED;
 		else
 			die(1, "Unknown capture mode <%s>. Use -h for help.\n", cap_mode_str);
+	}
+
+	if (baud_rate_str) {
+		if (strcmp(baud_rate_str, "?") == 0 ||
+		    strcmp(baud_rate_str, "help") == 0) {
+			list_baud_rates();
+			exit(0);
+		}
+		if (!parse_int(baud_rate_str, &baud))
+			die(1, "Failed to parse baud rate <%s>\n", baud_rate_str);
 	}
 
 	/* Possibilities:
