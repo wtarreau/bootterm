@@ -379,9 +379,11 @@ const char *get_conf(const char *var_name)
 	return value;
 }
 
-void set_port_list(char **list, const char *var_name)
+/* removes all blanks and all occurrences of "/dev/" from var and make it a
+ * port list used to replace <list>. NULL is just an empty list and is valid.
+ */
+void set_port_list(char **list, const char *var)
 {
-	const char *var = get_conf(var_name);
 	char *value, *s, *d;
 
 	free(*list);
@@ -1300,9 +1302,9 @@ int main(int argc, char **argv)
 		progname++;
 
 	/* read environment variables */
-	set_port_list(&exclude_list,  "scan.exclude-ports");
-	set_port_list(&include_list,  "scan.include-ports");
-	set_port_list(&restrict_list, "scan.restrict-ports");
+	set_port_list(&exclude_list,  get_conf("scan.exclude-ports"));
+	set_port_list(&include_list,  get_conf("scan.include-ports"));
+	set_port_list(&restrict_list, get_conf("scan.restrict-ports"));
 	do_wait_any = !!get_conf("scan.wait-any");
 	do_wait_new = !do_wait_any && !!get_conf("scan.wait-new");
 
