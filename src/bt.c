@@ -91,7 +91,7 @@ const char usage_msg[] =
 	"\n"
 	"Ports are sorted in reverse registration order so that port 0 is the most\n"
 	"recently added one. A number may be set instead of the port. With no name nor\n"
-	"number, port 0 is automatically used.\n"
+	"number, last port is used.\n"
 	"Comma-delimited lists of ports to exclude/include/restrict may be passed in\n"
 	"BT_SCAN_EXCLUDE_PORTS, BT_SCAN_INCLUDE_PORTS, and BT_SCAN_RESTRICT_PORTS.\n"
 	"";
