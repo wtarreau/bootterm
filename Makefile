@@ -69,7 +69,7 @@ install: install-bins
 install-bins: bins
 	$(cmd_STRIP) $(BINS)
 	$(Q)[ -d "$(DESTDIR)$(PREFIX)/bin/." ] || mkdir -p -m 0755 $(DESTDIR)$(PREFIX)/bin
-	$(cmd_INSTALL) -m 0755 -t $(DESTDIR)$(PREFIX)/bin $(BINS)
+	$(cmd_INSTALL) -m 0755 $(BINS) $(DESTDIR)$(PREFIX)/bin
 
 clean:
 	$(Q)-rm -f $(BINS) $(OBJS) *.o *~
