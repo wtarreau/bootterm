@@ -94,6 +94,7 @@ const char usage_msg[] =
 	"number, last port is used. Use '?' or 'help' in baud rate to list them all.\n"
 	"Comma-delimited lists of ports to exclude/include/restrict may be passed in\n"
 	"BT_SCAN_EXCLUDE_PORTS, BT_SCAN_INCLUDE_PORTS, and BT_SCAN_RESTRICT_PORTS.\n"
+	"BT_SCAN_EXCLUDE_DRIVERS ignores ports matching these drivers.\n"
 	"";
 
 /* Note that we need CRLF in raw mode */
@@ -260,6 +261,7 @@ int cap_fd = -1; // -1 = no capture in progress
 time_t last_cap_sec = 0;
 
 /* list made of port names (without slashes) delimited by commas */
+char *exclude_drivers = NULL;
 char *exclude_list = NULL;
 char *include_list = NULL;
 char *restrict_list = NULL;
@@ -652,6 +654,9 @@ int scan_ports()
 				driver = strdup("");
 			}
 			else
+				goto fail;
+
+			if (*driver && in_list(exclude_drivers, driver))
 				goto fail;
 
 			name = strdup(ent->d_name);
@@ -1303,6 +1308,7 @@ int main(int argc, char **argv)
 		progname++;
 
 	/* read environment variables */
+	set_port_list(&exclude_drivers,  get_conf("scan.exclude-drivers"));
 	set_port_list(&exclude_list,  get_conf("scan.exclude-ports"));
 	set_port_list(&include_list,  get_conf("scan.include-ports"));
 	set_port_list(&restrict_list, get_conf("scan.restrict-ports"));

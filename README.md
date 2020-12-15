@@ -135,6 +135,21 @@ Waiting for one port to appear...
 
 It is probably what most laptop users will want to do so as never to have to pass any argument and automatically connect to a USB serial port.
 
+One may also exclude some drivers from the scan using `BT_SCAN_EXCLUDE_DRIVERS`, which can sometimes be more convenient to ignore some known uninteresting internal devices:
+```
+$ bt -l
+ port |  age (sec) | device     | driver           | model
+------+------------+------------+------------------+----------------------
+    0 |      12562 | ttyACM0    | cdc_acm          | Fibocom L830-EB
+    1 |         99 | ttyS0      | serial           |
+ *  2 |         21 | ttyUSB0    | cp210x           | CP2102 USB to UART Bridge Controller
+
+$ BT_SCAN_EXCLUDE_DRIVERS=serial,cdc_acm bt -l
+ port |  age (sec) | device     | driver           | model
+------+------------+------------+------------------+----------------------
+ *  0 |         24 | ttyUSB0    | cp210x           | CP2102 USB to UART Bridge Controller
+```
+
 Alternately, it is possible to restrict the port enumeration to only a specific set by listing them in `BT_SCAN_RESTRICT_PORTS`. This can be more convenient when you know that your port is always called `ttyACM0` or any such thing for example.
 
 ### Changing the baud rate
