@@ -121,7 +121,7 @@ enum cap_mode {
 struct serial {
 	char *name;            // device name without /dev
 	char *driver;          // driver name (usually a short word)
-	char *model;           // model name when reported
+	char *desc;            // descrption when reported
 	time_t ctime;          // device attachment date
 };
 
@@ -603,7 +603,7 @@ int scan_ports()
 	char ftmp[PATH_MAX];
 	struct stat st;
 	DIR *dir = NULL;
-	char *link, *driver, *model, *name;
+	char *link, *driver, *desc, *name;
 
 	nbports = 0;
 
@@ -622,7 +622,7 @@ int scan_ports()
 		if (restrict_list && !in_list(restrict_list, ent->d_name))
 			continue;
 
-		link = driver = model = name = NULL;
+		link = driver = desc = name = NULL;
 		snprintf(ftmp, sizeof(ftmp), "/sys/class/tty/%s/device/.", ent->d_name);
 		if (stat(ftmp, &st) == 0) {
 			/* really populated ports have either a "resources"
@@ -663,17 +663,17 @@ int scan_ports()
 			if (!name)
 				goto fail;
 
-			/* the model name usually appears in ../interface for ttyUSB or
+			/* the descrption usually appears in ../interface for ttyUSB or
 			 * ./interface for ttyACM
 			 */
-			model = read_line_from("/sys/class/tty/%s/device/../interface", ent->d_name);
-			if (!model)
-				model = read_line_from("/sys/class/tty/%s/device/interface", ent->d_name);
+			desc = read_line_from("/sys/class/tty/%s/device/../interface", ent->d_name);
+			if (!desc)
+				desc = read_line_from("/sys/class/tty/%s/device/interface", ent->d_name);
 			/* note: the model is not always set, so we accept NULL */
 
 			serial_ports[nbports].name = name;
 			serial_ports[nbports].driver = driver;
-			serial_ports[nbports].model = model;
+			serial_ports[nbports].desc = desc;
 			serial_ports[nbports].ctime = st.st_ctime;
 			nbports++;
 			continue;
@@ -681,7 +681,7 @@ int scan_ports()
 	fail:
 		free(driver);
 		free(link);
-		free(model);
+		free(desc);
 		free(name);
 
 	}
@@ -703,7 +703,7 @@ void list_ports(int portspec)
 	time_t now;
 	int p;
 
-	printf(" port |  age (sec) | device     | driver           | model                \n"
+	printf(" port |  age (sec) | device     | driver           | description          \n"
 	       "------+------------+------------+------------------+----------------------\n"
 		);
 
@@ -715,7 +715,7 @@ void list_ports(int portspec)
 		       (unsigned int)(now - serial_ports[p].ctime),
 		       serial_ports[p].name,
 		       serial_ports[p].driver,
-		       serial_ports[p].model ? serial_ports[p].model : "");
+		       serial_ports[p].desc ? serial_ports[p].desc : "");
 	}
 	putchar('\n');
 }

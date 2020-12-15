@@ -5,7 +5,7 @@ Bootterm is a simple, reliable and powerful terminal designed to ease connection
 ## Main Features
 
 - automatic port detection (uses the most recently registered one by default)
-- enumeration of available ports with detected drivers and models
+- enumeration of available ports with detected drivers and descriptions
 - wait for a specific, a new, or any port to appear (convenient with USB ports)
 - support for non-standard baud rates (e.g. 74880 bauds for ESP8266)
 - can send a Break sequence and toggling RTS/DTR for various reset sequences
@@ -35,7 +35,7 @@ By default, `bt` connects to the last registered serial port, which usually is t
 
 ```
 $ bt -l  
- port |  age (sec) | device     | driver           | model                
+ port |  age (sec) | device     | driver           | description
 ------+------------+------------+------------------+----------------------
     0 |     524847 | ttyAMA0    | uart-pl011       |                  
     1 |     524847 | ttyUSB0    | ftdi_sio         | TTL232R-3V3      
@@ -76,7 +76,7 @@ Example below booting a Breadbee board with an integrated CH340E adapter after `
 ```
 $ bt -n
 3 ports found, waiting for a new one...
- port |  age (sec) | device     | driver           | model                
+ port |  age (sec) | device     | driver           | description
 ------+------------+------------+------------------+----------------------
     3 |          0 | ttyUSB1    | ch341-uart       |                  
 
@@ -93,7 +93,7 @@ One particularly appreciable case is when connecting to an emulated port, such a
 ```
 $ bt -n
 2 ports found, waiting for a new one...
- port |  age (sec) | device     | driver           | model                
+ port |  age (sec) | device     | driver           | description
 ------+------------+------------+------------------+----------------------
     2 |          0 | ttyACM0    | cdc_acm          | CDC Abstract Control Model (ACM) 
 ```
@@ -117,7 +117,7 @@ $ export BT_SCAN_EXCLUDE_PORTS=ttyS0,ttyS1
 $ bt -a
 Waiting for one port to appear...
 Port ttyUSB0 available, using it.
- port |  age (sec) | device     | driver           | model                
+ port |  age (sec) | device     | driver           | description
 ------+------------+------------+------------------+----------------------
     0 |          0 | ttyUSB0    | ch341-uart       |                  
 
@@ -138,14 +138,14 @@ It is probably what most laptop users will want to do so as never to have to pas
 One may also exclude some drivers from the scan using `BT_SCAN_EXCLUDE_DRIVERS`, which can sometimes be more convenient to ignore some known uninteresting internal devices:
 ```
 $ bt -l
- port |  age (sec) | device     | driver           | model
+ port |  age (sec) | device     | driver           | description
 ------+------------+------------+------------------+----------------------
     0 |      12562 | ttyACM0    | cdc_acm          | Fibocom L830-EB
     1 |         99 | ttyS0      | serial           |
  *  2 |         21 | ttyUSB0    | cp210x           | CP2102 USB to UART Bridge Controller
 
 $ BT_SCAN_EXCLUDE_DRIVERS=serial,cdc_acm bt -l
- port |  age (sec) | device     | driver           | model
+ port |  age (sec) | device     | driver           | description
 ------+------------+------------+------------------+----------------------
  *  0 |         24 | ttyUSB0    | cp210x           | CP2102 USB to UART Bridge Controller
 ```
@@ -159,7 +159,7 @@ By default, the port's baud rate is maintained for ports that were already prese
 ```
 $ bt -b 74880
 Port ttyUSB2 available, using it.
- port |  age (sec) | device     | driver           | model                
+ port |  age (sec) | device     | driver           | description
 ------+------------+------------+------------------+----------------------
     2 |     524342 | ttyUSB2    | cp210x           | CP2102 USB to UART Bridge Controller 
 
