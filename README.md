@@ -98,7 +98,7 @@ $ bt -n
     2 |          0 | ttyACM0    | cdc_acm          | CDC Abstract Control Model (ACM) 
 ```
 
-When connecting to a new port, the baud rate is automatically set to 115200 bps. However it is not changed for already existing ports. This port selection mode can be automatically enabled by setting the `BT_SCAN_WAIT_NEW` environment variable to any value:
+This port selection mode can be automatically enabled by setting the `BT_SCAN_WAIT_NEW` environment variable to any value:
 
 ```
 $ export BT_SCAN_WAIT_NEW=1
@@ -154,7 +154,7 @@ Alternately, it is possible to restrict the port enumeration to only a specific 
 
 ### Changing the baud rate
 
-By default, the port's baud rate is maintained for ports that were already present before `bt` started. It will be forced to 115200 bauds for newly discovered ports. However the speed may be always forced using the `BT_PORT_BAUD_RATE` environment variable, or by using `-b` followed by a speed. Example below with a NodeMCU module:
+On opening, the port's baud rate is automatically changed to the value specified with `-b`, or in the `BT_PORT_BAUD_RATE` variable, or by default to 115200 if neither is set. However if the baud rate is explicitly set to 0 (either using `-b` or using the variable) then the baud rate is unchanged. Example below with a NodeMCU module:
 
 ```
 $ bt -b 74880

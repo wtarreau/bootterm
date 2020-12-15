@@ -83,7 +83,7 @@ const char usage_msg[] =
 	"  -n           wait for a new port to be registered (BT_SCAN_WAIT_NEW)\n"
 	"  -m <min>     specify lowest printable character  (default: 0)\n"
 	"  -M <max>     specify highest printable character (default: 255)\n"
-	"  -b <baud>    specify baud rate (BT_PORT_BAUD_RATE, default: 0=port's current)\n"
+	"  -b <baud>    specify baud rate (BT_PORT_BAUD_RATE; default:115200; 0=current)\n"
 	"  -c {none|fixed|timed} enable capture to file (BT_CAPTURE_MODE)\n"
 	"  -e <escape>  escape character or ASCII code  (default: 29 = Ctrl-])\n"
 	"  -f <fmt>     capture file name (default: 'bootterm-%%Y%%m%%d-%%H%%M%%S.log')\n"
@@ -254,7 +254,7 @@ const char *port = NULL;
 int nbports = 0;
 int currport = -1; // last one
 int quiet = 0;
-int baud = 0;
+int baud = 115200;
 
 char cap_name[PATH_MAX];
 int cap_fd = -1; // -1 = no capture in progress
@@ -1501,12 +1501,6 @@ int main(int argc, char **argv)
 		if (usepath) {
 			fd = open_port(port);
 			if (fd < 0) {
-				/* default bauds for newly connected ports are random, let's
-				 * switch to 115200 if not set.
-				 */
-				if (!baud)
-					baud = 115200;
-
 				if (!quiet)
 					printf("Waiting for port %s to appear...\n", port);
 
@@ -1524,13 +1518,6 @@ int main(int argc, char **argv)
 		if (!nbports) {
 			if (!quiet)
 				printf("Waiting for one port to appear...\n");
-
-			/* default bauds for newly connected ports are random, let's
-			 * switch to 115200 if not set.
-			 */
-			if (!baud)
-				baud = 115200;
-
 			do {
 				usleep(100000);
 				scan_ports();
@@ -1563,12 +1550,6 @@ int main(int argc, char **argv)
 			if (nbports < prev_nbports)
 				prev_nbports = nbports;
 		} while (nbports <= prev_nbports || nbports <= currport);
-
-		/* default bauds for newly connected ports are random, let's
-		 * switch to 115200 if not set.
-		 */
-		if (!baud)
-			baud = 115200;
 
 		if (!quiet && !do_list && !do_print)
 			list_ports(nbports - 1);
@@ -1639,8 +1620,6 @@ done_scan:
 			if (errno == ENOENT && forced && do_wait_new) {
 				if (!retries)
 					printf("Waiting for port %s to appear.\n", port);
-				if (!baud)
-					baud = 115200;
 				usleep(200000);
 				retries++;
 				continue;
