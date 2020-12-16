@@ -373,6 +373,8 @@ const char *get_conf(const char *var_name)
 			*(d++) = c;
 		} while (c);
 		value = getenv(envname);
+		if (!value || !*value)
+			value = NULL;
 	}
 
 	/* TODO: implement an option to perform a look-up in a config file if
