@@ -596,6 +596,35 @@ static int serial_port_cmp(const void *a, const void *b)
 		return 1;
 }
 
+/* Tries to open device node <devname> after verifying that it looks like a
+ * char device, and checks if it supports termios. Returns non-zero on success,
+ * zero on failure.
+ *
+ * WT: maybe we should only do that on devices shared with groups or users so
+ *     as to limit ourselves to non-dangerous candidates only ?
+ */
+int file_isatty(const char *devname)
+{
+	struct stat st;
+	int ret = 0;
+	int fd = -1;
+
+	if (stat(devname, &st) != 0)
+		goto fail;
+
+	if ((st.st_mode & S_IFMT) != S_IFCHR)
+		goto fail;
+
+	fd = open(devname, O_RDONLY);
+	if (fd == -1)
+		goto fail;
+
+	ret = isatty(fd);
+	close(fd);
+fail:
+	return ret;
+}
+
 /* scans available ports, fills serial_ports[] and returns the number of
  * entries filled in (also stored in nbports).
  */
@@ -731,6 +760,9 @@ int scan_ports()
 #endif
 
 		snprintf(ftmp, sizeof(ftmp), "/dev/%s", ent->d_name);
+		if (!file_isatty(ftmp))
+			continue;
+
 		if (stat(ftmp, &st) == 0) {
 			serial_ports[nbports].name = strdup(ent->d_name);
 			serial_ports[nbports].driver = NULL;
