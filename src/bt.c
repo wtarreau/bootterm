@@ -33,6 +33,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +44,9 @@
 #endif
 #include <time.h>
 #include <unistd.h>
+#if defined(__FreeBSD__)
+#include <sys/sysctl.h>
+#endif
 
 #define MAXPORTS 100
 #define BUFSIZE 1024
@@ -800,6 +804,160 @@ int scan_ports()
 
 	}
 	closedir(dir);
+
+	if (nbports)
+		qsort(serial_ports, nbports, sizeof(serial_ports[0]), serial_port_cmp);
+
+	return nbports;
+}
+
+#elif __FreeBSD__
+
+/* Use sysctls to enumerate all entries starting with "dev.<driver>.<instance>".
+ * Those that have a "ttyname" entry are real ttys. "uart" is one as well and
+ * doesn't have a ttyname entry but is mapped as cuau<instance>. The scanning
+ * method was figured using "truss sysctl -a" but appears to work fine.
+ */
+int scan_ports()
+{
+	/* For lookups, the first two elements contain the request type and the
+	 * the rest contains the oids making the key name. When retrieving
+	 * values however this starts directly with the oid.
+	 */
+	int oid[CTL_MAXNAME + 2];
+	size_t oidlen, nextlen;
+
+	char ftmp[PATH_MAX];
+	struct stat st;
+
+	char name[1024]; // the sysctl entry name
+	size_t namelen;  // #bytes
+	char *lastword;  // last word of the sysctl name
+
+	char value[1024];
+	size_t valuelen;
+
+	/* buffers to keep values that possibly arrive in any order */
+	char currtty[1024];
+	char currdrv[1024];
+	char currdsc[1024];
+	char currname[1024];
+	size_t currnamelen;
+
+	int done;
+
+	/* This loop is quite odd because we need to collect data and commit
+	 * them when detecting a name change, or when failing a next operation.
+	 * The first call retrieves an OID. This OID must be turned into a name
+	 * which we use to detect that we changed to a new node, and to
+	 * retrieve variables. But the variables are then for the new node so
+	 * they must not yet be checked, which is why we commit them before
+	 * retrieving new values.
+	 */
+	currnamelen = done = 0;
+	*currtty = *currdrv = *currdsc = 0;
+
+	while (nbports < MAXPORTS) {
+		if (!currnamelen) {
+			/* first call, doesn't use sizeof but #entries! */
+			oidlen = CTL_MAXNAME;
+			if (sysctlnametomib("dev", &oid[2], &oidlen) != 0)
+				return scan_ports_generic();
+		} else {
+			/* Warning, contrary to the first call, this one takes
+			 * and returns a sizeof!
+			 */
+			oid[0] = CTL_SYSCTL;
+			oid[1] = CTL_SYSCTL_NEXT;
+			nextlen = CTL_MAXNAME * sizeof(*oid);
+			if (sysctl(oid, oidlen + 2, &oid[2], &nextlen, 0, 0) != 0) {
+				/* WT: we should only stop on ENOENT, but don't we
+				 * face a risk of endless loop if a next fails and
+				 * we don't break ?
+				 */
+				done = 1;
+				goto commit;
+			}
+			oidlen = nextlen / sizeof(*oid);
+		}
+
+		/* Now our OID is always set */
+
+		/* this will return the current sysctl name */
+		oid[0] = CTL_SYSCTL;
+		oid[1] = CTL_SYSCTL_NAME;
+		namelen = sizeof(name);
+		if (sysctl(oid, oidlen + 2, name, &namelen, 0, 0) != 0) {
+			if (errno != ENOENT)
+				done = 1;
+			goto commit;
+		}
+
+                lastword = strrchr(name, '.');
+		if (!lastword)
+			lastword = name + strlen(name);
+
+		/* "dev" is an entry on its own and appears first */
+		if (strcmp(name, "dev") == 0)
+			goto commit;
+
+		/* nothing but dev. should appear otherwise it's the end */
+		if (strncmp(name, "dev.", 4) != 0) {
+			done = 1;
+			goto commit;
+		}
+
+		/* name is now for example "dev.uart.0.%driver" */
+
+	commit:
+		/* If we've reached the end or changed to a new device, we must
+		 * first commit what we have before retrieving new values.
+		 */
+		if (done || !currnamelen || lastword - name != currnamelen ||
+		    memcmp(name, currname, currnamelen) != 0) {
+			if (*currtty &&
+			    snprintf(ftmp, sizeof(ftmp), "/dev/%s", currtty) < sizeof(ftmp) &&
+			    !in_list(always_ignore, currtty) &&
+			    !in_list(exclude_list, currtty) &&
+			    (!restrict_list || in_list(restrict_list, currtty)) &&
+			    stat(ftmp, &st) == 0) {
+				serial_ports[nbports].name   = strdup(currtty);
+				serial_ports[nbports].driver = *currdrv ? strdup(currdrv) : NULL;
+				serial_ports[nbports].desc   = *currdsc ? strdup(currdsc) : NULL;
+				serial_ports[nbports].ctime  = st.st_ctime;
+				nbports++;
+			}
+
+			/* prepare new name */
+			currnamelen = lastword - name;
+			memcpy(currname, name, currnamelen);
+			currname[currnamelen] = 0;
+			*currtty = *currdrv = *currdsc = 0;
+			if (done)
+				break;
+		}
+
+		/* Let's take only "driver=uart" (then dev.uart.X => /dev/cuauX)
+		 * and those having ttyname=X (then dev.foo.X.ttyname => /dev/cuaX)
+		 * store last driver, ttyname, desc for each node and compare
+		 * when switching to another node.
+		 */
+		valuelen = sizeof(value);
+		if (sysctl(oid + 2, oidlen, value, &valuelen, 0, 0) == 0) {
+			if (strcmp(lastword, ".ttyname") == 0)
+				snprintf(currtty, sizeof(currtty), "cua%s", value);
+			else if (strcmp(lastword, ".%driver") == 0)
+				strlcpy(currdrv, value, sizeof(currdrv));
+			else if (strcmp(lastword, ".%desc") == 0)
+				strlcpy(currdsc, value, sizeof(currdsc));
+		}
+
+		*lastword = 0;
+		if (!*currtty && strncmp(name, "dev.uart.", 9) == 0) {
+			/* preset ttyname from dev.uart.NN to cuauNN */
+			snprintf(currtty, sizeof(currtty), "cuau%s", name + 9);
+		}
+	}
 
 	if (nbports)
 		qsort(serial_ports, nbports, sizeof(serial_ports[0]), serial_port_cmp);
