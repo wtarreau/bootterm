@@ -597,6 +597,54 @@ static int serial_port_cmp(const void *a, const void *b)
 /* scans available ports, fills serial_ports[] and returns the number of
  * entries filled in (also stored in nbports).
  */
+#ifdef __APPLE__
+int scan_ports() {
+    struct dirent *ent;
+    char ftmp[PATH_MAX];
+    struct stat st;
+    DIR *dir = NULL;
+
+    nbports = 0;
+
+    dir = opendir("/dev");
+    if (!dir)
+        goto end;
+
+    while (nbports < MAXPORTS) {
+        ent = readdir(dir);
+        if (!ent)
+            break;
+
+        if (in_list(exclude_list, ent->d_name))
+            continue;
+
+        if (restrict_list && !in_list(restrict_list, ent->d_name))
+            continue;
+
+        if (strncmp(ent->d_name, "cu.", 3) != 0)
+            continue;
+
+        snprintf(ftmp, sizeof(ftmp), "/dev/%s", ent->d_name);
+        if (stat(ftmp, &st) == 0) {
+            serial_ports[nbports].name = strdup(ent->d_name);
+            serial_ports[nbports].driver = NULL;
+            serial_ports[nbports].desc = NULL;
+            serial_ports[nbports].ctime = st.st_ctime;
+            nbports++;
+            continue;
+        }
+    }
+
+end:
+    if (dir)
+        closedir(dir);
+
+    if (nbports)
+        qsort(serial_ports, nbports, sizeof(serial_ports[0]), serial_port_cmp);
+
+    return nbports;
+}
+#else
 int scan_ports()
 {
 	struct dirent *ent;
@@ -694,6 +742,7 @@ end:
 
 	return nbports;
 }
+#endif
 
 /* list all ports if portspec < 0 or just this port. The current port is never
  * reported if a single one is requested.
@@ -714,7 +763,7 @@ void list_ports(int portspec)
 		       p,
 		       (unsigned int)(now - serial_ports[p].ctime),
 		       serial_ports[p].name,
-		       serial_ports[p].driver,
+		       serial_ports[p].driver ? serial_ports[p].driver : "",
 		       serial_ports[p].desc ? serial_ports[p].desc : "");
 	}
 	putchar('\n');
