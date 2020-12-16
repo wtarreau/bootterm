@@ -629,7 +629,68 @@ fail:
 /* scans available ports, fills serial_ports[] and returns the number of
  * entries filled in (also stored in nbports).
  */
+int scan_ports_generic()
+{
+	struct dirent *ent;
+	char ftmp[PATH_MAX];
+	struct stat st;
+	DIR *dir = NULL;
+
+	nbports = 0;
+
+	dir = opendir("/dev");
+	if (!dir)
+		goto end;
+
+	while (nbports < MAXPORTS) {
+		ent = readdir(dir);
+		if (!ent)
+			break;
+
+		if (in_list(always_ignore, ent->d_name))
+			continue;
+
+		if (in_list(exclude_list, ent->d_name))
+			continue;
+
+		if (restrict_list && !in_list(restrict_list, ent->d_name))
+			continue;
+
+#ifdef __APPLE__
+		/* On macOS all serial ports appear as /dev/cu.<name> */
+		if (strncmp(ent->d_name, "cu.", 3) != 0)
+			continue;
+#endif
+
+		snprintf(ftmp, sizeof(ftmp), "/dev/%s", ent->d_name);
+		if (!file_isatty(ftmp))
+			continue;
+
+		if (stat(ftmp, &st) == 0) {
+			serial_ports[nbports].name = strdup(ent->d_name);
+			serial_ports[nbports].driver = NULL;
+			serial_ports[nbports].desc = NULL;
+			serial_ports[nbports].ctime = st.st_ctime;
+			nbports++;
+			continue;
+		}
+	}
+
+end:
+	if (dir)
+		closedir(dir);
+
+	if (nbports)
+		qsort(serial_ports, nbports, sizeof(serial_ports[0]), serial_port_cmp);
+
+	return nbports;
+}
+
 #ifdef __linux__
+
+/* This version relies on /sys/class/tty. If not found, it falls back to the
+ * generic version which uses /dev.
+ */
 int scan_ports()
 {
 	struct dirent *ent;
@@ -642,7 +703,7 @@ int scan_ports()
 
 	dir = opendir("/sys/class/tty");
 	if (!dir)
-		goto end;
+		return scan_ports_generic();
 
 	while (nbports < MAXPORTS) {
 		ent = readdir(dir);
@@ -721,9 +782,7 @@ int scan_ports()
 		free(name);
 
 	}
-end:
-	if (dir)
-		closedir(dir);
+	closedir(dir);
 
 	if (nbports)
 		qsort(serial_ports, nbports, sizeof(serial_ports[0]), serial_port_cmp);
@@ -735,60 +794,9 @@ end:
 
 int scan_ports()
 {
-	struct dirent *ent;
-	char ftmp[PATH_MAX];
-	struct stat st;
-	DIR *dir = NULL;
-
-	nbports = 0;
-
-	dir = opendir("/dev");
-	if (!dir)
-		goto end;
-
-	while (nbports < MAXPORTS) {
-		ent = readdir(dir);
-		if (!ent)
-			break;
-
-		if (in_list(always_ignore, ent->d_name))
-			continue;
-
-		if (in_list(exclude_list, ent->d_name))
-			continue;
-
-		if (restrict_list && !in_list(restrict_list, ent->d_name))
-			continue;
-
-#ifdef __APPLE__
-		/* On macOS all serial ports appear as /dev/cu.<name> */
-		if (strncmp(ent->d_name, "cu.", 3) != 0)
-			continue;
-#endif
-
-		snprintf(ftmp, sizeof(ftmp), "/dev/%s", ent->d_name);
-		if (!file_isatty(ftmp))
-			continue;
-
-		if (stat(ftmp, &st) == 0) {
-			serial_ports[nbports].name = strdup(ent->d_name);
-			serial_ports[nbports].driver = NULL;
-			serial_ports[nbports].desc = NULL;
-			serial_ports[nbports].ctime = st.st_ctime;
-			nbports++;
-			continue;
-		}
-	}
-
-end:
-	if (dir)
-		closedir(dir);
-
-	if (nbports)
-		qsort(serial_ports, nbports, sizeof(serial_ports[0]), serial_port_cmp);
-
-	return nbports;
+	return scan_ports_generic();
 }
+
 #endif
 
 /* list all ports if portspec < 0 or just this port. The current port is never
