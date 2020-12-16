@@ -660,6 +660,23 @@ int scan_ports_generic()
 		/* On macOS all serial ports appear as /dev/cu.<name> */
 		if (strncmp(ent->d_name, "cu.", 3) != 0)
 			continue;
+#elif __FreeBSD__
+		/* On FreeBSD, USB serial ports appear as /dev/cua* and we need
+		 * to drop *.lock and *.init.
+		 */
+		if (strncmp(ent->d_name, "cua", 3) == 0) {
+			size_t len = strlen(ent->d_name);
+			const char *end = ent->d_name + len;
+
+			if (len > 5 &&
+			    (strcmp(end - 5, ".init") == 0 ||
+			     strcmp(end - 5, ".lock") == 0))
+				continue;
+		}
+		else {
+			/* nothing other than cua* for FreeBSD */
+			continue;
+		}
 #endif
 
 		snprintf(ftmp, sizeof(ftmp), "/dev/%s", ent->d_name);
