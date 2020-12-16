@@ -1181,7 +1181,7 @@ void forward(int fd)
 		stdio_is_term = 1;
 	}
 
-	/* Note: we're going to use select(). We should theorically switch
+	/* Note: we're going to use select(). We should theoretically switch
 	 * both FDs to non-blocking mode. The problem is that it usually is a
 	 * bad idea (files are not pollable, and terminals may misbehave once
 	 * once this is done, and will be hard to fix). Since select() is level
@@ -1267,7 +1267,7 @@ void forward(int fd)
 				ioctl(fd, TIOCMGET, &pins);
 				if (c == 'd' || c == 'D' || c == 'f' || c == 'F')
 					pins ^= TIOCM_DTR;
-				if (c == 'r' || c == 'r' || c == 'f' || c == 'F')
+				if (c == 'r' || c == 'R' || c == 'f' || c == 'F')
 					pins ^= TIOCM_RTS;
 				ioctl(fd, TIOCMSET, &pins);
 
