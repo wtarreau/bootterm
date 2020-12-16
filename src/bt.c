@@ -265,6 +265,7 @@ char *exclude_drivers = NULL;
 char *exclude_list = NULL;
 char *include_list = NULL;
 char *restrict_list = NULL;
+const char *always_ignore = "ptmx,tty,stderr,stdin,stdout";
 
 /* display the message and exit with the code */
 void die(int code, const char *format, ...)
@@ -648,6 +649,9 @@ int scan_ports()
 		if (!ent)
 			break;
 
+		if (in_list(always_ignore, ent->d_name))
+			continue;
+
 		if (in_list(exclude_list, ent->d_name))
 			continue;
 
@@ -746,6 +750,9 @@ int scan_ports()
 		ent = readdir(dir);
 		if (!ent)
 			break;
+
+		if (in_list(always_ignore, ent->d_name))
+			continue;
 
 		if (in_list(exclude_list, ent->d_name))
 			continue;
