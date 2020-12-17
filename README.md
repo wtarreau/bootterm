@@ -26,7 +26,7 @@ $ make install PREFIX=~/.local
 $ (or "sudo make install" for a system-wide installation)
 ```
 
-The program comes with no other dependency than a basic libc and produces a single binary (`bt`). It can easily be cross-compiled by setting `CROSS_COMPILE` or `CC`, though the makefile only adds unneeded abstraction and could simply be bypassed (please check it, it's self-explanatory). It was tested on several Linux distros and platforms (i386, x86_64, arm, aarch64).
+The program comes with no other dependency than a basic libc and produces a single binary (`bt`). It can easily be cross-compiled by setting `CROSS_COMPILE` or `CC`, though the makefile only adds unneeded abstraction and could simply be bypassed (please check it, it's self-explanatory). It was tested on several Linux distros and platforms (i386, x86_64, arm, aarch64), on macOS, on FreeBSD 12 (arm64) and on AIX 5.1 (ppc).
 
 ## Using it
 
@@ -69,7 +69,7 @@ Enter the escape character again after this menu to use these commands.
 
 Most often you don't want to know what name your serial port will have, you just want to connect to the one you're about to plug, as soon as it's available, in order to grasp most of the boot sequence. That's what `bt -n` is made for. It will check the list of current ports and will wait for a new one to be inserted. It even works if one port is unplugged and replugged. This is very convenient to avoid having to follow cables on a desk, or when connecting to a device that gets both the power and the console from the same USB connector.
 
-Please note that the automatic port detection feature is only supported on Linux for now.
+The automatic port detection is more precise on Linux and FreeBSD where a detailed list of available ports with their respective drivers and descriptions are available. On other operating systems, the automatic detection falls back to a scan of node in `/dev`, avoiding known unrelated ones, and focusing on specific ones for certain operating systems (e.g. macOS uses `cu.*`).
 
 Example below booting a Breadbee board with an integrated CH340E adapter after `bt -n`:
 
