@@ -620,7 +620,7 @@ int file_isatty(const char *devname)
 	if ((st.st_mode & S_IFMT) != S_IFCHR)
 		goto fail;
 
-	fd = open(devname, O_RDONLY);
+	fd = open(devname, O_RDONLY | O_NONBLOCK | O_NOCTTY);
 	if (fd == -1)
 		goto fail;
 
