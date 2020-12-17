@@ -67,7 +67,7 @@ Enter the escape character again after this menu to use these commands.
 
 ### Waiting for a new serial port
 
-Most often you don't want to know what name your serial port will have, you just want to connect to the one you're about to plug, as soon as it's available, in order to grasp most of the boot sequence. That's what `bt -n` is made for. It will check the list of current ports and will wait for a new one to be inserted. It even works if one port is unplugged and replugged. This is very convenient to avoid having to follow cables on a desk, or when connecting to a device that gets both the power and the console from the same USB connector.
+Most often you don't want to know what name your serial port will have, you just want to connect to the one you're about to plug, as soon as it's available, in order to grasp most of the boot sequence. That's what `bt -n` is made for. It will check the list of current ports and will wait for a new one to be inserted. It even works if one port is unplugged and replugged. This is very convenient to avoid having to follow cables on a desk, or when connecting to a device that gets both the power and the console from the same USB connector. It's worth noting that this wait feature is ignored when `-l` is used to get an instant list of detected ports.
 
 The automatic port detection is more precise on Linux and FreeBSD where a detailed list of available ports with their respective drivers and descriptions are available. On other operating systems, the automatic detection falls back to a scan of node in `/dev`, avoiding known unrelated ones, and focusing on specific ones for certain operating systems (e.g. macOS uses `cu.*`).
 
@@ -108,7 +108,7 @@ $ bt
 
 ### Waiting for any port
 
-A different approach consists in waiting for either a specific port or any port. By default, issuing `bt ttyUSB0` will fail if this terminal doesn't exist yet. But with `bt -a ttyUSB0`, BootTerm will wait for the device to appear.
+A different approach consists in waiting for either a specific port or any port. By default, issuing `bt ttyUSB0` will fail if this terminal doesn't exist yet. But with `bt -a ttyUSB0`, BootTerm will wait for the device to appear. Just like with `-n`, this wait feature is ignored when `-l` is used to get an instant list of detected ports.
 
 With no device name specified, it will wait for any usable device and use the most recent one. If some ports are already on board and must never be used, they can be excluded using the environment variable `BT_SCAN_EXCLUDE_PORTS`, which is a comma-delimited list of device names, possibly ending with `*`:
 

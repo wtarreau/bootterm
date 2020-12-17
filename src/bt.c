@@ -1779,7 +1779,7 @@ int main(int argc, char **argv)
 	 * specified in the path is listed, or that the requested number is
 	 * available, otherwise that any port is available.
 	 */
-	if (do_wait_any) {
+	if (do_wait_any && !do_list) {
 		if (currport >= 0 && currport < nbports) {
 			port = serial_ports[currport].name;
 			if (!quiet)
@@ -1826,7 +1826,7 @@ int main(int argc, char **argv)
 	 * added since the previous 100ms. We do explicitly support unplugging
 	 * and replugging.
 	 */
-	if (!usepath && do_wait_new) {
+	if (!usepath && do_wait_new && !do_list) {
 		int prev_nbports = nbports;
 
 		if (!quiet)
