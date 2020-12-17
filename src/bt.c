@@ -269,7 +269,7 @@ char *exclude_drivers = NULL;
 char *exclude_list = NULL;
 char *include_list = NULL;
 char *restrict_list = NULL;
-const char *always_ignore = "ptmx,tty,stderr,stdin,stdout";
+const char *always_ignore = "pty*,null,zero,rtc*,nvram*,mem,kmem,kbd*,mouse*,psaux*,audio*,dsp*,fb*,random,urandom,mt*,rmt*,console,ptmx,ptc,tty,stderr,stdin,stdout";
 
 /* display the message and exit with the code */
 void die(int code, const char *format, ...)
