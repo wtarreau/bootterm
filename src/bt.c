@@ -340,10 +340,20 @@ int parse_byte(const char *in, unsigned char *out)
 int in_list(const char *list, const char *item)
 {
 	size_t ilen = strlen(item);
+	const char *word;
 
 	while (list && *list) {
-		if (strncmp(list, item, ilen) == 0 &&
-		    (list[ilen] == 0 || list[ilen] == ','))
+		word = list;
+		while (*list && *list != ',' && *list != '*')
+			list++;
+
+		if (*list == '*' && ilen >= list - word) {
+			if (strncmp(word, item, list - word) == 0)
+				return 1;
+		}
+
+		if (strncmp(word, item, ilen) == 0 &&
+		    (word[ilen] == 0 || word[ilen] == ','))
 			return 1;
 
 		while (*list && *(list++) != ',')

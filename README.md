@@ -110,7 +110,7 @@ $ bt
 
 A different approach consists in waiting for either a specific port or any port. By default, issuing `bt ttyUSB0` will fail if this terminal doesn't exist yet. But with `bt -a ttyUSB0`, BootTerm will wait for the device to appear.
 
-With no device name specified, it will wait for any usable device and use the most recent one. If some ports are already on board and must never be used, they can be excluded using the environment variable `BT_SCAN_EXCLUDE_PORTS`:
+With no device name specified, it will wait for any usable device and use the most recent one. If some ports are already on board and must never be used, they can be excluded using the environment variable `BT_SCAN_EXCLUDE_PORTS`, which is a comma-delimited list of device names, possibly ending with `*`:
 
 ```
 $ export BT_SCAN_EXCLUDE_PORTS=ttyS0,ttyS1
@@ -127,7 +127,7 @@ Escape character is 'Ctrl-]'. Use escape followed by '?' for help.
 
 It is also possible to enable this port selection mode by default using `BT_SCAN_WAIT_ANY`:
 ```
-$ export BT_SCAN_EXCLUDE_PORTS=ttyS0,ttyS1
+$ export BT_SCAN_EXCLUDE_PORTS=ttyS*
 $ export BT_SCAN_WAIT_ANY=1
 $ bt
 Waiting for one port to appear...
@@ -150,7 +150,7 @@ $ BT_SCAN_EXCLUDE_DRIVERS=serial,cdc_acm bt -l
  *  0 |         24 | ttyUSB0    | cp210x           | CP2102 USB to UART Bridge Controller
 ```
 
-Alternately, it is possible to restrict the port enumeration to only a specific set by listing them in `BT_SCAN_RESTRICT_PORTS`. This can be more convenient when you know that your port is always called `ttyACM0` or any such thing for example.
+Alternately, it is possible to restrict the port enumeration to only a specific set by listing them in `BT_SCAN_RESTRICT_PORTS`. This can be more convenient when you know that your port is always called `ttyACM0` or any such thing for example. Similarly these ports can end with `*` to validate any suffix, such as `ttyACM*`.
 
 ### Changing the baud rate
 
