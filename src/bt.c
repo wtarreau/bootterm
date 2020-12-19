@@ -26,6 +26,7 @@
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/ioctl.h>
+#include <sys/time.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -89,6 +90,7 @@ const char usage_msg[] =
 	"  -M <max>     specify highest printable character (default: 255)\n"
 	"  -b <baud>    specify baud rate (BT_PORT_BAUD_RATE; default:115200; 0=current)\n"
 	"  -c {none|fixed|timed} enable capture to file (BT_CAPTURE_MODE)\n"
+	"  -t {none|abs|init|line} enable timestamps in captures (BT_TIMESTAMP_MODE)\n"
 	"  -e <escape>  escape character or ASCII code  (default: 29 = Ctrl-])\n"
 	"  -f <fmt>     capture file name (default: 'bootterm-%%Y%%m%%d-%%H%%M%%S.log')\n"
 	"  -V           show version and license\n"
@@ -120,6 +122,13 @@ enum cap_mode {
 	CAP_NONE = 0,
 	CAP_FIXED,
 	CAP_TIMED,
+};
+
+enum ts_mode {
+	TS_NONE = 0,
+	TS_ABS,  // absolute time
+	TS_INIT, // time relative to init time
+	TS_LINE, // time relative to previous line
 };
 
 struct serial {
@@ -263,6 +272,9 @@ int baud = 115200;
 char cap_name[PATH_MAX];
 int cap_fd = -1; // -1 = no capture in progress
 time_t last_cap_sec = 0;
+struct timeval start_ts = { }; // timestamp of current line
+enum ts_mode ts_mode = TS_NONE;
+const char *ts_mode_str = NULL;
 
 /* list made of port names (without slashes) delimited by commas */
 char *exclude_drivers = NULL;
@@ -1271,6 +1283,69 @@ void b_skip(struct buffer *buf, int num)
 		buf->data = buf->room = 0;
 }
 
+void write_to_capture(int fd, const struct buffer *buf, int len)
+{
+	static struct timeval prev_ts; // timestamp of previous line
+	static struct timeval line_ts; // timestamp of current line
+	static int cap_bol = 1;        // beginning of line
+	const unsigned char *lf;
+	char hdr[30];
+	int pos = 0;
+	int max;
+	int ret;
+
+	while (len > 0) {
+		if (ts_mode > TS_NONE && cap_bol) {
+			/* at beginning of line, must write a timestamp */
+			gettimeofday(&line_ts, NULL);
+			if (ts_mode == TS_INIT) {
+				unsigned int  sec = line_ts.tv_sec  - start_ts.tv_sec;
+				unsigned int usec = line_ts.tv_usec - start_ts.tv_usec;
+
+				if (usec >= 1000000) { // overflow
+					usec += 1000000;
+					sec -= 1;
+				}
+				ret = snprintf(hdr, sizeof(hdr), "[%6u.%06u] ", sec, usec);
+			} else if (ts_mode == TS_LINE) {
+				unsigned int sec  = line_ts.tv_sec  - prev_ts.tv_sec;
+				unsigned int usec = line_ts.tv_usec - prev_ts.tv_usec;
+
+				if (!prev_ts.tv_sec && !prev_ts.tv_usec) { // first line
+					sec = 0;
+					usec = 0;
+				}
+				else if (usec >= 1000000) { // overflow
+					usec += 1000000;
+					sec -= 1;
+				}
+				ret = snprintf(hdr, sizeof(hdr), "[%6u.%06u] ", sec, usec);
+			} else { // TS_ABS
+				ret = strftime(hdr, sizeof(hdr), "[%Y%m%d-%H%M%S.", localtime(&line_ts.tv_sec));
+				ret += snprintf(hdr+ret, sizeof(hdr)-ret, "%06u] ", (unsigned int)line_ts.tv_usec);
+			}
+			ret = write(fd, hdr, ret);
+			cap_bol = 0;
+		}
+
+		lf = memchr(buf->b + buf->room + pos, '\n', len);
+		if (lf) {
+			cap_bol = 1;
+			max = lf - (buf->b + buf->room + pos) + 1;
+		}
+		else
+			max = len;
+
+		ret = write(fd, buf->b + buf->room + pos, max);
+		if (ret < 0)
+			break;
+
+		pos += ret;
+		len -= ret;
+		prev_ts = line_ts;
+	}
+}
+
 /* send as much as possible of a buffer to the fd */
 void buf_to_fd(int fd, struct buffer *buf)
 {
@@ -1306,12 +1381,8 @@ void fd_to_buf(int fd, struct buffer *buf, int capfd)
 		return;
 	}
 
-	if (capfd >= 0) {
-		/* a capture to this FD was requested, captures are made in
-		 * blocking mode. capfd on return only used to shut up gcc.
-		 */
-		capfd = write(capfd, buf->b + buf->room, ret);
-	}
+	if (capfd >= 0)
+		write_to_capture(capfd, buf, ret);
 
 	buf->len  += ret;
 	buf->room += ret;
@@ -1606,6 +1677,7 @@ int main(int argc, char **argv)
 
 	baud_rate_str = get_conf("port.baud-rate");
 	cap_mode_str = get_conf("capture.mode");
+	ts_mode_str = get_conf("timestamp.mode");
 
 	/* simple parsing loop, stops before isolated '-', before words
 	 * starting with other chars, but after '--', in which case <curr>
@@ -1685,6 +1757,13 @@ int main(int argc, char **argv)
 			arg = NULL;
 			break;
 
+		case 't':
+			if (!arg)
+				die(1, "missing argument for -%c\n", opt);
+			ts_mode_str = arg;
+			arg = NULL;
+			break;
+
 		case 'e':
 			if (!arg)
 				die(1, "missing argument for -%c\n", opt);
@@ -1739,6 +1818,19 @@ int main(int argc, char **argv)
 			cap_mode = CAP_TIMED;
 		else
 			die(1, "Unknown capture mode <%s>. Use -h for help.\n", cap_mode_str);
+	}
+
+	if (ts_mode_str) {
+		if (strcmp(ts_mode_str, "none") == 0)
+			ts_mode = TS_NONE;
+		else if (strcmp(ts_mode_str, "abs") == 0)
+			ts_mode = TS_ABS;
+		else if (strcmp(ts_mode_str, "init") == 0)
+			ts_mode = TS_INIT;
+		else if (strcmp(ts_mode_str, "line") == 0)
+			ts_mode = TS_LINE;
+		else
+			die(1, "Unknown timestamp mode <%s>. Use -h for help.\n", ts_mode_str);
 	}
 
 	if (baud_rate_str) {
@@ -1978,6 +2070,9 @@ go_with_fd:
 
 		printf("Escape character is '%s'. Use escape followed by '?' for help.\n", esc);
 	}
+
+	/* set start time of capture just before forwarding */
+	gettimeofday(&start_ts, NULL);
 
 	/* perform the actual forwarding */
 	forward(fd);

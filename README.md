@@ -10,6 +10,7 @@ Bootterm is a simple, reliable and powerful terminal designed to ease connection
 - support for non-standard baud rates (e.g. 74880 bauds for ESP8266)
 - can send a Break sequence and toggling RTS/DTR for various reset sequences
 - fixed/timed captures to files (may be enabled at run time)
+- optionally time-stamped captures (relative/absolute dates)
 - reliable with proper error handling
 - single binary without annoying dependencies, builds out of the box
 - supports stdin/stdout to inject/download data
@@ -227,6 +228,18 @@ And when collecting event logs from a server with one file per day:
 ```
 $ bt -c timed -f "server-%Y%m%d.log"
 ```
+
+### Timestamps in captures
+
+Timestamps may be enabled in captures, according to the `-t` command line argument, or the `BT_TIMESTAMP_MODE`, which may contain one of the following values:
+
+  - `none`: no timestamp is added, lines are dumped exactly as received, this is the default
+  - `abs` : the date and time of the first character at the beginning of a line are dumped using year,month,day,hour,minute,second,micro enclosed in square brackets at the beginning of the line, followed by a space, such as `[20201219-192208.888633]`.
+  - `init`: the time of the first character of each line, relative to the start of the program is printed at the beginning of each line using seconds and microseconds inside square brackets followed by a space, such as `[     3.557564]`. The seconds are padded on 6 characters, which are enough for 11 days of capture. Above this the field's width will increase.
+  - `line`: the time of the first character of each line, relative to the date of the previous line is printed at the beginning of each line using seconds and microseconds inside square brackets followed by a space, such as `[     1.273017]`. The seconds are padded on 6 characters, which are enough for 11 days of pause between two lines. Above this the field's width will increase.
+
+Example of capture with line-relative timestamps, showing a kernel decompression time of 1.27 second:
+![capture](doc/kernel-boot.png)
 
 ### Changing the escape character
 
