@@ -8,7 +8,7 @@ Bootterm is a simple, reliable and powerful terminal designed to ease connection
 - enumeration of available ports with detected drivers and descriptions
 - wait for a specific, a new, or any port to appear (convenient with USB ports)
 - support for non-standard baud rates (e.g. 74880 bauds for ESP8266)
-- can send a Break sequence and toggling RTS/DTR for various reset sequences
+- can send a Break sequence and toggling RTS/DTR for various reset sequences, even on startup
 - fixed/timed captures to files (may be enabled at run time)
 - optionally time-stamped captures (relative/absolute dates)
 - reliable with proper error handling
@@ -197,7 +197,7 @@ fi
 
 The current port status (name, speed, pins) is reported when pressing `p` after the escape sequence. Pin names in lower cases are in the low state, those in upper case are in the high state. When pin toggling is required, it is wise to check the real pin's polarity, as most circuits invert it multiple times along the chain. The reported status here is the one seen by the serial port driver.
 
-A break sequence can be used to trigger the SysRq feature in Linux, or to reboot some boards. The break happens by pressing `b` after the escape key. E.g. `Ctrl-] b`.
+A break sequence can be used to trigger the SysRq feature in Linux, or to reboot some boards. The break happens by pressing `b` after the escape key. E.g. `Ctrl-] b`. It is also possible to send a break sequence just before starting the terminal by passing `-B` on the command line.
 
 The DTR pin can be toggled by pressing `D` after the escape character, and the RTS pin can be toggled by pressing `R`. Both pins can be toggled together (for example to reset an ESP8266 in flashing mode) by pressing `F`.
 
