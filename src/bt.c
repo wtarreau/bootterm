@@ -95,6 +95,7 @@ const char usage_msg[] =
 	"  -f <fmt>     capture file name (default: 'bootterm-%%Y%%m%%d-%%H%%M%%S.log')\n"
 	"  -V           show version and license\n"
 	"  -B           send a break sequence before starting the terminal\n"
+	"  -N           do not launch the terminal, just quit\n"
 	"\n"
 	"Ports are sorted in reverse registration order so that port 0 is the most\n"
 	"recently added one. A number may be set instead of the port. With no name nor\n"
@@ -1660,6 +1661,7 @@ int main(int argc, char **argv)
 	int do_wait_any = 0;
 	int do_print = 0;
 	int do_send_break = 0;
+	int no_term = 0;
 	int forced = 0;
 	int usepath = 0;
 	int retries = 0;
@@ -1729,6 +1731,10 @@ int main(int argc, char **argv)
 
 		case 'B':
 			do_send_break = 1;
+			break;
+
+		case 'N':
+			no_term = 1;
 			break;
 
 		case 'l':
@@ -2081,6 +2087,9 @@ go_with_fd:
 
 	if (do_send_break)
 		tcsendbreak(fd, 0);
+
+	if (no_term)
+		return 0;
 
 	/* set start time of capture just before forwarding */
 	gettimeofday(&start_ts, NULL);

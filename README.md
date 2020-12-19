@@ -197,7 +197,7 @@ fi
 
 The current port status (name, speed, pins) is reported when pressing `p` after the escape sequence. Pin names in lower cases are in the low state, those in upper case are in the high state. When pin toggling is required, it is wise to check the real pin's polarity, as most circuits invert it multiple times along the chain. The reported status here is the one seen by the serial port driver.
 
-A break sequence can be used to trigger the SysRq feature in Linux, or to reboot some boards. The break happens by pressing `b` after the escape key. E.g. `Ctrl-] b`. It is also possible to send a break sequence just before starting the terminal by passing `-B` on the command line.
+A break sequence can be used to trigger the SysRq feature in Linux, or to reboot some boards. The break happens by pressing `b` after the escape key. E.g. `Ctrl-] b`. It is also possible to send a break sequence just before starting the terminal by passing `-B` on the command line. Combined with `-N`, it may be used to simply program a reset from a script (e.g. `bt -aqNB`).
 
 The DTR pin can be toggled by pressing `D` after the escape character, and the RTS pin can be toggled by pressing `R`. Both pins can be toggled together (for example to reset an ESP8266 in flashing mode) by pressing `F`.
 
