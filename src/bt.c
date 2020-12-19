@@ -769,13 +769,15 @@ int scan_ports()
 			 * entry (8250/16550), a "resource" entry (platform),
 			 * an "of_node" entry (anything from a DT), an
 			 * "interface" entry (e.g. for cdc_acm) or a "port_number"
-			 * entry (e.g. for USB). This seems to cover most cases
-			 * where auto-detection matters.
+			 * entry (e.g. for USB), or "bInterfaceClass" for any USB
+			 * device with limited implementation. This seems to cover
+			 * most cases where auto-detection matters.
 			 */
 			if (!file_exists("/sys/class/tty/%s/device/resources", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/resource", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/of_node", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/interface", ent->d_name) &&
+			    !file_exists("/sys/class/tty/%s/device/bInterfaceClass", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/port_number", ent->d_name) &&
 			    !in_list(include_list, ent->d_name))
 				goto fail;
