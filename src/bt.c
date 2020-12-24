@@ -834,7 +834,7 @@ int file_isatty(const char *devname)
 
 #ifdef __linux__
 	/* On Linux, only keep terminals having CLOCAL set, those without are local consoles */
-	if (ret && (tcgetattr(fd, &tio) != 0 || !(tio.c_cflag & CLOCAL)))
+	if (ret && (ioctl(fd, TCGETS, &tio) != 0 || !(tio.c_cflag & CLOCAL)))
 		ret = 0;
 #endif
 
