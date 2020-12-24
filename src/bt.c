@@ -970,6 +970,7 @@ int scan_ports()
 			 */
 			if (!file_exists("/sys/class/tty/%s/device/resources", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/resource", ent->d_name) &&
+			    !file_exists("/sys/class/tty/%s/device/bus", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/of_node", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/interface", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/bInterfaceClass", ent->d_name) &&
