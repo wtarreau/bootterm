@@ -946,6 +946,7 @@ int scan_ports()
 	struct stat st;
 	DIR *dir = NULL;
 	char *link, *driver, *desc, *name;
+	int candidates = 0;
 
 	nbports = 0;
 
@@ -992,6 +993,8 @@ int scan_ports()
 			    !file_exists("/sys/class/tty/%s/type", ent->d_name) &&
 			    !in_list(include_list, ent->d_name))
 				goto fail;
+
+			candidates++;
 
 			link = read_link_from("/sys/class/tty/%s/device/driver", ent->d_name);
 			if (link) {
@@ -1054,6 +1057,8 @@ int scan_ports()
 
 	if (nbports)
 		qsort(serial_ports, nbports, sizeof(serial_ports[0]), serial_port_cmp);
+	else if (!candidates)
+		return scan_ports_generic();
 
 	return nbports;
 }
