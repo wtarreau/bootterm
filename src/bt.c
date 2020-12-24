@@ -1002,11 +1002,15 @@ int scan_ports()
 				goto fail;
 
 			/* the descrption usually appears in ../interface for ttyUSB or
-			 * ./interface for ttyACM
+			 * ./interface for ttyACM. Some devices like CH341 do not provide
+			 * anything but they come with a "product" node which identifies
+			 * the USB device.
 			 */
 			desc = read_line_from("/sys/class/tty/%s/device/../interface", ent->d_name);
 			if (!desc)
 				desc = read_line_from("/sys/class/tty/%s/device/interface", ent->d_name);
+			if (!desc)
+				desc = read_line_from("/sys/class/tty/%s/device/../../product", ent->d_name);
 			/* note: the model is not always set, so we accept NULL */
 
 			serial_ports[nbports].name = name;
