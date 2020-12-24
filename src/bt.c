@@ -901,6 +901,16 @@ int scan_ports_generic()
 				/* nothing other than cua* for FreeBSD */
 				continue;
 			}
+#elif __linux__
+			/* On Linux, tty[0-9]* are virtual consoles, tty[a-z]* are
+			 * pseudo-ttys, and vcs* are virtual consoles.
+			 */
+			if (strncmp(devname, "tty", 3) == 0 &&
+			    (islower(devname[3]) || isdigit(devname[3])))
+				continue;
+
+			if (strncmp(devname, "vcs", 3) == 0)
+				continue;
 #endif
 
 			if (!file_isatty(ftmp))
