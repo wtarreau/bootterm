@@ -376,6 +376,182 @@ int in_list(const char *list, const char *item)
 	return 0;
 }
 
+#if defined(TCGETS2) && !defined(NO_TCGETS2) // since linux 2.6.20 (commit edc6afc54)
+/* try to set the baud rate and mode on the port corresponding to the fd. The
+ * baud rate remains unchanged if <baud> is zero. We have two APIs, one using
+ * TCSETS and one using TCSETS2, which allows non-standard baud rates. On
+ * failure -1 is returned with errno set, otherwise zero is returned. If a
+ * baud rate couldn't be found, -1 is returned and errno set.
+ */
+int set_port(int fd, int baud)
+{
+	struct termios2 tio;
+
+	ioctl(fd, TCGETS2, &tio);
+	/* c_cflag serves to set both directions at once this way (CBAUD is a
+	 * mask for all the Bxxxx speed bits) (see termbits.h):
+	 *    (Bxxxx & CBAUD) << IBSHIFT for the input speed
+	 *    (Bxxxx & CBAUD) for the output speed.
+	 * A special baud rate value, BOTHER, indicates that the speed is to be
+	 * taken from the c_ispeed and c_ospeed fields instead.
+	 */
+	tio.c_cflag  = (tio.c_cflag & ~CSIZE) | CS8; // 8-bit
+	tio.c_cflag  = (tio.c_cflag & ~CSTOPB);      // 1-stop
+	tio.c_cflag &= ~(PARENB | PARODD);           // no parity
+	tio.c_cflag &= ~HUPCL;                       // no DTR/RTS down
+	tio.c_cflag &= ~CRTSCTS;                     // no flow control
+	tio.c_cflag |= CREAD;                        // enable rx
+	tio.c_cflag |= CLOCAL;                       // local echo
+
+	if (baud) {
+		tio.c_cflag &= ~(CBAUD | (CBAUD << IBSHIFT));
+		tio.c_cflag |= BOTHER | (BOTHER << IBSHIFT);
+		tio.c_ospeed = tio.c_ispeed = baud;
+	}
+
+	tio.c_iflag = 0;
+	tio.c_oflag = 0;
+	tio.c_lflag = 0;
+
+	return ioctl(fd, TCSETS2, &tio);
+}
+
+/* returns the currently configured baud rate for the port, or 0 if unknown */
+int get_baud_rate(int fd)
+{
+	struct termios2 tio;
+	int idx;
+
+	ioctl(fd, TCGETS2, &tio);
+	if ((tio.c_cflag & (CBAUD|CBAUDEX)) == BOTHER)
+		return tio.c_ospeed;
+
+	for (idx = 0; baud_rates[idx].b; idx++)
+		if ((tio.c_cflag & (CBAUD|CBAUDEX)) == baud_rates[idx].f)
+			return baud_rates[idx].b;
+	return 0;
+}
+
+void list_baud_rates()
+{
+	printf("termios2 is supported, so any baud rate is supported\n");
+}
+
+/* we have to redefined these ones because GNU libc tries very hard to
+ * prevent us from using those above, and notably purposely creates
+ * redefinition errors to prevent us from loading termios.h
+ */
+static int tcgetattr(int fd, struct termios *tio)
+{
+	return ioctl(fd, TCGETS, tio);
+}
+
+static int tcsetattr(int fd, int ignored, const struct termios *tio)
+{
+	return ioctl(fd, TCSETS, tio);
+}
+
+static int tcsendbreak(int fd, int duration)
+{
+	return ioctl(fd, TCSBRK, duration);
+}
+
+#else /* TCSETS2 not defined */
+
+/* returns a combination of Bxxxx flags to set on termios c_cflag depending on
+ * the baud rate values supported on the platform. Only exact values match. If
+ * no value is found, (tcflag_t)~0 is returned, assuming it will never match an
+ * existing value on any platform.
+ */
+tcflag_t baud_encode(int baud)
+{
+	int idx;
+
+	for (idx = 0; baud_rates[idx].b; idx++) {
+		if (baud_rates[idx].b == baud)
+			return baud_rates[idx].f;
+	}
+	return baud_rates[idx].f;
+}
+
+/* try to set the baud rate and mode on the port corresponding to the fd. The
+ * baud rate remains unchanged if <baud> is zero. We have two APIs, one using
+ * TCSETS and one using TCSETS2, which allows non-standard baud rates. On
+ * failure -1 is returned with errno set, otherwise zero is returned. If a
+ * baud rate couldn't be found, -1 is returned and errno set.
+ */
+int set_port(int fd, int baud)
+{
+	struct termios tio = { };
+	tcflag_t baud_flag;
+
+	// see man tty_ioctl
+	tcgetattr(fd, &tio);
+
+	/* c_cflag serves to set both directions at once this way (CBAUD is a
+	 * mask for all the Bxxxx speed bits) (see termbits.h):
+	 *    (Bxxxx & CBAUD) << IBSHIFT for the input speed
+	 *    (Bxxxx & CBAUD) for the output speed.
+	 * A special baud rate value, BOTHER, indicates that the speed is to be
+	 * taken from the c_ispeed and c_ospeed fields instead.
+	 */
+	tio.c_cflag  = (tio.c_cflag & ~CSIZE) | CS8; // 8-bit
+	tio.c_cflag  = (tio.c_cflag & ~CSTOPB);      // 1-stop
+	tio.c_cflag &= ~(PARENB | PARODD);           // no parity
+	tio.c_cflag &= ~HUPCL;                       // no DTR/RTS down
+	tio.c_cflag &= ~CRTSCTS;                     // no flow control
+	tio.c_cflag |= CREAD;                        // enable rx
+	tio.c_cflag |= CLOCAL;                       // local echo
+
+	if (baud) {
+		//tio.c_cflag &= ~(CBAUD | (CBAUD << IBSHIFT));
+		//tio.c_cflag |= BOTHER | (BOTHER << IBSHIFT);
+		baud_flag = baud_encode(baud);
+		if (baud_flag == ~0) { /* baud rate not found */
+			errno = EINVAL;
+			return -1;
+		}
+		if (cfsetospeed(&tio, baud_flag) == -1)
+			return -1;
+		if (cfsetispeed(&tio, baud_flag) == -1)
+			return -1;
+	}
+
+	tio.c_iflag = 0;
+	tio.c_oflag = 0;
+	tio.c_lflag = 0;
+	return tcsetattr(fd, TCSANOW, &tio);
+}
+
+/* returns the currently configured baud rate for the port, or 0 if unknown */
+int get_baud_rate(int fd)
+{
+	struct termios tio;
+	speed_t spd;
+	int idx;
+
+	tcgetattr(fd, &tio);
+	spd = cfgetospeed(&tio);
+
+	for (idx = 0; baud_rates[idx].b; idx++)
+		if (spd == baud_rates[idx].f)
+			return baud_rates[idx].b;
+	return 0;
+}
+
+void list_baud_rates()
+{
+	int idx;
+
+	printf("The following baud rates are known (not necessarily supported though):");
+	for (idx = 0; baud_rates[idx].b; idx++)
+		printf("%s %8d", (idx % 5 == 0) ? "\n    " : "", baud_rates[idx].b);
+	putchar('\n');
+}
+
+#endif // TCSETS2 not defined
+
+
 /* returns the value of configuration variable <var_name> or NULL if not found.
  * The variable is first looked up in the environment by prepending "BT_", by
  * turning all letters to upper case, and changing "." and "-" to "_". Example:
@@ -1060,182 +1236,6 @@ int open_port(const char *port)
 	}
 	return fd;
 }
-
-#if defined(TCGETS2) && !defined(NO_TCGETS2) // since linux 2.6.20 (commit edc6afc54)
-/* try to set the baud rate and mode on the port corresponding to the fd. The
- * baud rate remains unchanged if <baud> is zero. We have two APIs, one using
- * TCSETS and one using TCSETS2, which allows non-standard baud rates. On
- * failure -1 is returned with errno set, otherwise zero is returned. If a
- * baud rate couldn't be found, -1 is returned and errno set.
- */
-int set_port(int fd, int baud)
-{
-	struct termios2 tio;
-
-	ioctl(fd, TCGETS2, &tio);
-	/* c_cflag serves to set both directions at once this way (CBAUD is a
-	 * mask for all the Bxxxx speed bits) (see termbits.h):
-	 *    (Bxxxx & CBAUD) << IBSHIFT for the input speed
-	 *    (Bxxxx & CBAUD) for the output speed.
-	 * A special baud rate value, BOTHER, indicates that the speed is to be
-	 * taken from the c_ispeed and c_ospeed fields instead.
-	 */
-	tio.c_cflag  = (tio.c_cflag & ~CSIZE) | CS8; // 8-bit
-	tio.c_cflag  = (tio.c_cflag & ~CSTOPB);      // 1-stop
-	tio.c_cflag &= ~(PARENB | PARODD);           // no parity
-	tio.c_cflag &= ~HUPCL;                       // no DTR/RTS down
-	tio.c_cflag &= ~CRTSCTS;                     // no flow control
-	tio.c_cflag |= CREAD;                        // enable rx
-	tio.c_cflag |= CLOCAL;                       // local echo
-
-	if (baud) {
-		tio.c_cflag &= ~(CBAUD | (CBAUD << IBSHIFT));
-		tio.c_cflag |= BOTHER | (BOTHER << IBSHIFT);
-		tio.c_ospeed = tio.c_ispeed = baud;
-	}
-
-	tio.c_iflag = 0;
-	tio.c_oflag = 0;
-	tio.c_lflag = 0;
-
-	return ioctl(fd, TCSETS2, &tio);
-}
-
-/* returns the currently configured baud rate for the port, or 0 if unknown */
-int get_baud_rate(int fd)
-{
-	struct termios2 tio;
-	int idx;
-
-	ioctl(fd, TCGETS2, &tio);
-	if ((tio.c_cflag & (CBAUD|CBAUDEX)) == BOTHER)
-		return tio.c_ospeed;
-
-	for (idx = 0; baud_rates[idx].b; idx++)
-		if ((tio.c_cflag & (CBAUD|CBAUDEX)) == baud_rates[idx].f)
-			return baud_rates[idx].b;
-	return 0;
-}
-
-void list_baud_rates()
-{
-	printf("termios2 is supported, so any baud rate is supported\n");
-}
-
-/* we have to redefined these ones because GNU libc tries very hard to
- * prevent us from using those above, and notably purposely creates
- * redefinition errors to prevent us from loading termios.h
- */
-static int tcgetattr(int fd, struct termios *tio)
-{
-	return ioctl(fd, TCGETS, tio);
-}
-
-static int tcsetattr(int fd, int ignored, const struct termios *tio)
-{
-	return ioctl(fd, TCSETS, tio);
-}
-
-static int tcsendbreak(int fd, int duration)
-{
-	return ioctl(fd, TCSBRK, duration);
-}
-
-#else /* TCSETS2 not defined */
-
-/* returns a combination of Bxxxx flags to set on termios c_cflag depending on
- * the baud rate values supported on the platform. Only exact values match. If
- * no value is found, (tcflag_t)~0 is returned, assuming it will never match an
- * existing value on any platform.
- */
-tcflag_t baud_encode(int baud)
-{
-	int idx;
-
-	for (idx = 0; baud_rates[idx].b; idx++) {
-		if (baud_rates[idx].b == baud)
-			return baud_rates[idx].f;
-	}
-	return baud_rates[idx].f;
-}
-
-/* try to set the baud rate and mode on the port corresponding to the fd. The
- * baud rate remains unchanged if <baud> is zero. We have two APIs, one using
- * TCSETS and one using TCSETS2, which allows non-standard baud rates. On
- * failure -1 is returned with errno set, otherwise zero is returned. If a
- * baud rate couldn't be found, -1 is returned and errno set.
- */
-int set_port(int fd, int baud)
-{
-	struct termios tio = { };
-	tcflag_t baud_flag;
-
-	// see man tty_ioctl
-	tcgetattr(fd, &tio);
-
-	/* c_cflag serves to set both directions at once this way (CBAUD is a
-	 * mask for all the Bxxxx speed bits) (see termbits.h):
-	 *    (Bxxxx & CBAUD) << IBSHIFT for the input speed
-	 *    (Bxxxx & CBAUD) for the output speed.
-	 * A special baud rate value, BOTHER, indicates that the speed is to be
-	 * taken from the c_ispeed and c_ospeed fields instead.
-	 */
-	tio.c_cflag  = (tio.c_cflag & ~CSIZE) | CS8; // 8-bit
-	tio.c_cflag  = (tio.c_cflag & ~CSTOPB);      // 1-stop
-	tio.c_cflag &= ~(PARENB | PARODD);           // no parity
-	tio.c_cflag &= ~HUPCL;                       // no DTR/RTS down
-	tio.c_cflag &= ~CRTSCTS;                     // no flow control
-	tio.c_cflag |= CREAD;                        // enable rx
-	tio.c_cflag |= CLOCAL;                       // local echo
-
-	if (baud) {
-		//tio.c_cflag &= ~(CBAUD | (CBAUD << IBSHIFT));
-		//tio.c_cflag |= BOTHER | (BOTHER << IBSHIFT);
-		baud_flag = baud_encode(baud);
-		if (baud_flag == ~0) { /* baud rate not found */
-			errno = EINVAL;
-			return -1;
-		}
-		if (cfsetospeed(&tio, baud_flag) == -1)
-			return -1;
-		if (cfsetispeed(&tio, baud_flag) == -1)
-			return -1;
-	}
-
-	tio.c_iflag = 0;
-	tio.c_oflag = 0;
-	tio.c_lflag = 0;
-	return tcsetattr(fd, TCSANOW, &tio);
-}
-
-/* returns the currently configured baud rate for the port, or 0 if unknown */
-int get_baud_rate(int fd)
-{
-	struct termios tio;
-	speed_t spd;
-	int idx;
-
-	tcgetattr(fd, &tio);
-	spd = cfgetospeed(&tio);
-
-	for (idx = 0; baud_rates[idx].b; idx++)
-		if (spd == baud_rates[idx].f)
-			return baud_rates[idx].b;
-	return 0;
-}
-
-void list_baud_rates()
-{
-	int idx;
-
-	printf("The following baud rates are known (not necessarily supported though):");
-	for (idx = 0; baud_rates[idx].b; idx++)
-		printf("%s %8d", (idx % 5 == 0) ? "\n    " : "", baud_rates[idx].b);
-	putchar('\n');
-}
-
-#endif // TCSETS2 not defined
-
 
 /* returns the first pending char in the buffer, or <0 if none */
 int b_peek(const struct buffer *buf)
