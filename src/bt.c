@@ -997,6 +997,10 @@ int scan_ports()
 			if (*driver && in_list(exclude_drivers, driver))
 				goto fail;
 
+			snprintf(ftmp, sizeof(ftmp), "/dev/%s", ent->d_name);
+			if (!file_isatty(ftmp))
+				goto fail;
+
 			name = strdup(ent->d_name);
 			if (!name)
 				goto fail;
