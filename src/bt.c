@@ -811,6 +811,7 @@ static int serial_port_cmp(const void *a, const void *b)
 int file_isatty(const char *devname)
 {
 	struct termios tio;
+	struct winsize ws;
 	struct stat st;
 	int ret = 0;
 	int fd = -1;
@@ -826,6 +827,10 @@ int file_isatty(const char *devname)
 		goto fail;
 
 	ret = isatty(fd);
+
+	/* terminals with columns and rows set are usually local consoles */
+	if (ret && (ioctl(fd, TIOCGWINSZ, &ws) != 0 || (ws.ws_row && ws.ws_col)))
+		ret = 0;
 
 #ifdef __linux__
 	/* On Linux, only keep terminals having CLOCAL set, those without are local consoles */
