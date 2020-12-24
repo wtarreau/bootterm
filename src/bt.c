@@ -966,7 +966,11 @@ int scan_ports()
 			 * "interface" entry (e.g. for cdc_acm) or a "port_number"
 			 * entry (e.g. for USB), or "bInterfaceClass" for any USB
 			 * device with limited implementation. This seems to cover
-			 * most cases where auto-detection matters.
+			 * most cases where auto-detection matters. Some on-board
+			 * devices on some non-DT platforms will have nothing but
+			 * a "type" entry showing a non-zero value for present
+			 * devices. Since we test for the device's presence anyway
+			 * we don't even need to check that entry's contents.
 			 */
 			if (!file_exists("/sys/class/tty/%s/device/resources", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/resource", ent->d_name) &&
@@ -975,6 +979,7 @@ int scan_ports()
 			    !file_exists("/sys/class/tty/%s/device/interface", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/bInterfaceClass", ent->d_name) &&
 			    !file_exists("/sys/class/tty/%s/device/port_number", ent->d_name) &&
+			    !file_exists("/sys/class/tty/%s/type", ent->d_name) &&
 			    !in_list(include_list, ent->d_name))
 				goto fail;
 
