@@ -810,6 +810,7 @@ static int serial_port_cmp(const void *a, const void *b)
  */
 int file_isatty(const char *devname)
 {
+	struct termios tio;
 	struct stat st;
 	int ret = 0;
 	int fd = -1;
@@ -825,6 +826,13 @@ int file_isatty(const char *devname)
 		goto fail;
 
 	ret = isatty(fd);
+
+#ifdef __linux__
+	/* On Linux, only keep terminals having CLOCAL set, those without are local consoles */
+	if (ret && (tcgetattr(fd, &tio) != 0 || !(tio.c_cflag & CLOCAL)))
+		ret = 0;
+#endif
+
 	close(fd);
 fail:
 	return ret;
