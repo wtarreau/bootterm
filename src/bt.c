@@ -659,71 +659,75 @@ fail:
  */
 int scan_ports_generic()
 {
+	/* all entries must start with "/dev" */
+	const char *dirs[] = { "/dev", "/dev/usb/tts", "/dev/usb/acm", NULL };
 	struct dirent *ent;
 	char ftmp[PATH_MAX];
+	const char *devname;
 	struct stat st;
+	int diridx = 0;
 	DIR *dir = NULL;
 
 	nbports = 0;
 
-	dir = opendir("/dev");
-	if (!dir)
-		goto end;
-
-	while (nbports < MAXPORTS) {
-		ent = readdir(dir);
-		if (!ent)
-			break;
-
-		if (in_list(always_ignore, ent->d_name))
+	for (diridx = 0; dirs[diridx]; diridx++) {
+		dir = opendir(dirs[diridx]);
+		if (!dir)
 			continue;
 
-		if (in_list(exclude_list, ent->d_name))
-			continue;
+		while (nbports < MAXPORTS) {
+			ent = readdir(dir);
+			if (!ent)
+				break;
+			snprintf(ftmp, sizeof(ftmp), "%s/%s", dirs[diridx], ent->d_name);
+			devname = ftmp + 5; // skip "/dev/"
 
-		if (restrict_list && !in_list(restrict_list, ent->d_name))
-			continue;
+			if (in_list(always_ignore, devname))
+				continue;
+
+			if (in_list(exclude_list, devname))
+				continue;
+
+			if (restrict_list && !in_list(restrict_list, devname))
+				continue;
 
 #ifdef __APPLE__
-		/* On macOS all serial ports appear as /dev/cu.<name> */
-		if (strncmp(ent->d_name, "cu.", 3) != 0)
-			continue;
-#elif __FreeBSD__
-		/* On FreeBSD, USB serial ports appear as /dev/cua* and we need
-		 * to drop *.lock and *.init.
-		 */
-		if (strncmp(ent->d_name, "cua", 3) == 0) {
-			size_t len = strlen(ent->d_name);
-			const char *end = ent->d_name + len;
-
-			if (len > 5 &&
-			    (strcmp(end - 5, ".init") == 0 ||
-			     strcmp(end - 5, ".lock") == 0))
+			/* On macOS all serial ports appear as /dev/cu.<name> */
+			if (strncmp(devname, "cu.", 3) != 0)
 				continue;
-		}
-		else {
-			/* nothing other than cua* for FreeBSD */
-			continue;
-		}
+#elif __FreeBSD__
+			/* On FreeBSD, USB serial ports appear as /dev/cua* and we need
+			 * to drop *.lock and *.init.
+			 */
+			if (strncmp(devname, "cua", 3) == 0) {
+				size_t len = strlen(devname);
+				const char *end = devname + len;
+
+				if (len > 5 &&
+				    (strcmp(end - 5, ".init") == 0 ||
+				     strcmp(end - 5, ".lock") == 0))
+					continue;
+			}
+			else {
+				/* nothing other than cua* for FreeBSD */
+				continue;
+			}
 #endif
 
-		snprintf(ftmp, sizeof(ftmp), "/dev/%s", ent->d_name);
-		if (!file_isatty(ftmp))
-			continue;
+			if (!file_isatty(ftmp))
+				continue;
 
-		if (stat(ftmp, &st) == 0) {
-			serial_ports[nbports].name = strdup(ent->d_name);
-			serial_ports[nbports].driver = NULL;
-			serial_ports[nbports].desc = NULL;
-			serial_ports[nbports].ctime = st.st_ctime;
-			nbports++;
-			continue;
+			if (stat(ftmp, &st) == 0) {
+				serial_ports[nbports].name = strdup(devname);
+				serial_ports[nbports].driver = NULL;
+				serial_ports[nbports].desc = NULL;
+				serial_ports[nbports].ctime = st.st_ctime;
+				nbports++;
+				continue;
+			}
 		}
-	}
-
-end:
-	if (dir)
 		closedir(dir);
+	}
 
 	if (nbports)
 		qsort(serial_ports, nbports, sizeof(serial_ports[0]), serial_port_cmp);
