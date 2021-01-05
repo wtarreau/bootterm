@@ -1490,6 +1490,46 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 	return 0;
 }
 
+
+/* set terminal title to inform user we entered in escape mode.
+ *
+ * On some terminal "\033]1;\a" can restore previous title, on some
+ * others such as xterm, "\033]2;\a" seems to do it. Some others are
+ * able to save current title using "\033[22;0t" and restore it with
+ * "\033[23;0t"
+ *
+ * Full title restauration support for:
+ *   - iTerm2 (MacOS)
+ *   - alacritty (MacOS)
+ *   - Kitty terminal (MacOS)
+ *   - certainly others
+ *
+ * Partial title restauration for:
+ *   - Terminal (MacOS): Does not support title stack: reset to
+ *     default title.
+ *   - certainly others
+ */
+void set_term_title(struct buffer *buf) {
+	/* Try to store terminal title first */
+	b_puts(buf, "\033[22;0t", 7);
+	b_puts(buf, "\033]0;bt escape mode\a", 19);
+}
+
+/* Restore terminal title. Buffer is flushed to sdtout if <flush>
+ * is not null.
+ *
+ */
+void reset_term_title(struct buffer *buf, int flush) {
+	/* restore to default title */
+    b_puts(buf, "\033]0;\a", 5);
+	/* Try to restore previously saved title */
+	b_puts(buf, "\033[23;0t", 7);
+	if (flush) {
+		buf_to_fd(1, buf);
+	}
+}
+
+
 /* show the port status into <resp> for size <size> in a way suitable for
  * sending to a raw terminal.
  */
@@ -1610,6 +1650,12 @@ void forward(int fd)
 			int c = b_peek(&user_ibuf);
 
 			if (c == 'q' || c == 'Q' || c == '.') {
+				/* Reset terminal title. Here we need to flush the
+				 * buffer to stdout since we escape the while loop.
+				 */
+				if (stdio_is_term) {
+					reset_term_title(&user_obuf, 1);
+				}
 				/* quit */
 				break;
 			}
@@ -1671,6 +1717,10 @@ void forward(int fd)
 				}
 			}
 			else if (c == escape) {
+				/* reset terminal title */
+				if (stdio_is_term) {
+					reset_term_title(&user_obuf, 0);
+				}
 				/* two escape chars cause one to be sent */
 				if (b_putchar(&port_obuf, c)) {
 					in_esc = 0;
@@ -1680,11 +1730,18 @@ void forward(int fd)
 			else if (c >= 0 && b_putchar(&port_obuf, escape)) {
 				/* other chars will be sent as-is, preceeded by escape */
 				in_esc = 0;
+				if (stdio_is_term) {
+					reset_term_title(&user_obuf, 0);
+				}
 			}
 		}
 
 		/* transfer between IN and opposite OUT buffers */
 		if (!in_esc && xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape, NULL)) {
+			/* Change terminal title to infor user we are in escape mode */
+			if (stdio_is_term) {
+				set_term_title(&user_obuf);
+			}
 			/* we stopped in front of the escape character */
 			b_skip(&user_ibuf, 1);
 			in_esc = 1;
