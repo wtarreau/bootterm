@@ -1490,6 +1490,39 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 	return 0;
 }
 
+/* Invert the current screen for <time> ms and switch it back to a
+ * normal display.
+ *
+ */
+void flash_screen(int time) {
+	 /* reverse video */
+	 write(1, "\e[?5h", 5);
+	 usleep(time);
+	 /* normal video */
+	 write(1, "\e[?5l", 5);
+}
+
+/* Actions to perform when entering escape mode.
+ *  - A visual bell is rang
+ *  - The cursor is hiden
+ */
+void enter_escape_mode() {
+	 /* Visual bell */
+	 /* write(1, "\a", 1); */
+	 flash_screen(100000);
+	 /* hide cursor */
+	 write(1, "\e[?25l", 6);
+}
+
+/* Actions to perform when exiting escape mode.
+ *  - Show the cursor.
+ */
+void exit_escape_mode() {
+	 /* show cursor */
+	 write(1, "\e[?25h", 6);
+	 flash_screen(50000);
+}
+
 /* show the port status into <resp> for size <size> in a way suitable for
  * sending to a raw terminal.
  */
@@ -1610,12 +1643,18 @@ void forward(int fd)
 			int c = b_peek(&user_ibuf);
 
 			if (c == 'q' || c == 'Q' || c == '.') {
+				if (stdio_is_term) {
+					exit_escape_mode();
+				}
 				/* quit */
 				break;
 			}
 			else if (c == 'h' || c == 'H' || c == '?') {
 				if (b_puts(&user_obuf, menu_str, strlen(menu_str))) {
 					in_esc = 0;
+					if (stdio_is_term) {
+						 exit_escape_mode();
+					}
 					b_skip(&user_ibuf, 1);
 				}
 			}
@@ -1671,6 +1710,9 @@ void forward(int fd)
 				}
 			}
 			else if (c == escape) {
+				if (stdio_is_term) {
+					exit_escape_mode();
+				}
 				/* two escape chars cause one to be sent */
 				if (b_putchar(&port_obuf, c)) {
 					in_esc = 0;
@@ -1680,11 +1722,17 @@ void forward(int fd)
 			else if (c >= 0 && b_putchar(&port_obuf, escape)) {
 				/* other chars will be sent as-is, preceeded by escape */
 				in_esc = 0;
+				if (stdio_is_term) {
+				  exit_escape_mode();
+				}
 			}
 		}
 
 		/* transfer between IN and opposite OUT buffers */
 		if (!in_esc && xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape, NULL)) {
+			if (stdio_is_term) {
+				enter_escape_mode();
+			}
 			/* we stopped in front of the escape character */
 			b_skip(&user_ibuf, 1);
 			in_esc = 1;
@@ -2133,6 +2181,7 @@ go_with_fd:
 			snprintf(esc, sizeof(esc), "0x%02X", escape);
 
 		printf("Escape character is '%s'. Use escape followed by '?' for help.\n", esc);
+		printf("Cursor is invisible in escape mode.\n");
 	}
 
 	if (do_send_break)
