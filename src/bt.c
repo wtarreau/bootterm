@@ -50,7 +50,8 @@
 #endif
 
 #define MAXPORTS 100
-#define BUFSIZE 1024
+#define BUFSIZE 2048
+#define MARGIN  1024
 
 #ifndef VERSION
 #define VERSION "0.2.0"
@@ -1291,12 +1292,12 @@ int b_peek(const struct buffer *buf)
 	return buf->b[buf->data];
 }
 
-/* inserts one character into the buffer if possible. Returns the number of chars
- * added (0 or 1).
+/* inserts one character into the buffer if possible, always leaving at least
+ * <margin> chars unused. Returns the number of chars added (0 or 1).
  */
-int b_putchar(struct buffer *buf, int c)
+int b_putchar(struct buffer *buf, int c, int margin)
 {
-	if (buf->len >= BUFSIZE)
+	if (buf->len + margin >= BUFSIZE)
 		return 0;
 	buf->b[buf->room] = c;
 	buf->len++;
@@ -1306,14 +1307,14 @@ int b_putchar(struct buffer *buf, int c)
 	return 1;
 }
 
-/* atomically inserts one string into the buffer if possible. Returns the
- * number of chars added (0 or len).
+/* atomically inserts one string into the buffer if possible, always leaving at
+ * least <margin> chars unused. Returns the number of chars added (0 or len).
  */
-int b_puts(struct buffer *buf, const char *str, int len)
+int b_puts(struct buffer *buf, const char *str, int len, int margin)
 {
 	int i;
 
-	if (buf->len + len >= BUFSIZE)
+	if (buf->len + margin + len >= BUFSIZE)
 		return 0;
 
 	for (i = 0; i < len; i++) {
@@ -1468,14 +1469,14 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 		if (c >= chr_min && c <= chr_max &&
 		    (!in_utf8 || *in_utf8 || c <= 0x80 || c >= 0x9f)) {
 			/* transfer as-is */
-			if (!b_putchar(out, c))
+			if (!b_putchar(out, c, MARGIN))
 				break;
 		} else {
 			/* transcode to "<0xHH>" (6 chars) */
 			char tmp[7];
 
 			snprintf(tmp, sizeof(tmp), "<0x%02X>", c);
-			if (!b_puts(out, tmp, 6))
+			if (!b_puts(out, tmp, 6, MARGIN))
 				break;
 		}
 
@@ -1615,7 +1616,7 @@ void forward(int fd)
 				break;
 			}
 			else if (c == 'h' || c == 'H' || c == '?') {
-				if (b_puts(&user_obuf, menu_str, strlen(menu_str))) {
+				if (b_puts(&user_obuf, menu_str, strlen(menu_str), 0)) {
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
@@ -1638,27 +1639,27 @@ void forward(int fd)
 				ioctl(fd, TIOCMSET, &pins);
 
 				show_port(fd, resp, sizeof(resp));
-				if (b_puts(&user_obuf, resp, strlen(resp))) {
+				if (b_puts(&user_obuf, resp, strlen(resp), 0)) {
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
 			}
 			else if (c == 'b' || c == 'B') {
 				tcsendbreak(fd, 0);
-				if (b_puts(&user_obuf, "Sent break\r\n", 12)) {
+				if (b_puts(&user_obuf, "Sent break\r\n", 12, 0)) {
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
 			}
 			else if (c == 'c' || c == 'C') {
 				if (cap_mode == CAP_NONE &&
-				    b_puts(&user_obuf, "Enabling capture\r\n", 18)) {
+				    b_puts(&user_obuf, "Enabling capture\r\n", 18, 0)) {
 					cap_mode = CAP_FIXED;
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
 				else if (cap_mode > CAP_NONE &&
-				         b_puts(&user_obuf, "Disabling capture\r\n", 19)) {
+				         b_puts(&user_obuf, "Disabling capture\r\n", 19, 0)) {
 					cap_mode = CAP_NONE;
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
@@ -1666,19 +1667,19 @@ void forward(int fd)
 			}
 			else if (c == 'p' || c == 'P') { /* show port status */
 				show_port(fd, resp, sizeof(resp));
-				if (b_puts(&user_obuf, resp, strlen(resp))) {
+				if (b_puts(&user_obuf, resp, strlen(resp), 0)) {
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
 			}
 			else if (c == escape) {
 				/* two escape chars cause one to be sent */
-				if (b_putchar(&port_obuf, c)) {
+				if (b_putchar(&port_obuf, c, 0)) {
 					in_esc = 0;
 					b_skip(&user_ibuf, 1);
 				}
 			}
-			else if (c >= 0 && b_putchar(&port_obuf, escape)) {
+			else if (c >= 0 && b_putchar(&port_obuf, escape, 0)) {
 				/* other chars will be sent as-is, preceeded by escape */
 				in_esc = 0;
 			}
