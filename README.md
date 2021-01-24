@@ -63,6 +63,7 @@ BootTerm supports several single-character commands after the escape character:
   F f        flip both DTR and RTS pins
   B b        send break
   C c        enable / disable capture
+  T t        enable / disable timestamps on terminal
 Enter the escape character again after this menu to use these commands.
 ```
 
@@ -240,6 +241,8 @@ Timestamps may be enabled in captures, according to the `-t` command line argume
 
 Example of capture with line-relative timestamps, showing a kernel decompression time of 1.27 second:
 ![capture](doc/kernel-boot.png)
+
+In addition, timestamps may also be temporarily enabled on the terminal by pressing 'T' after the escape character. The timestamp mode configured above will be used, except if not set, in which  case the absolute mode will be used. It is important to understand that timestamps on a terminal will quickly cause trouble on the output since the terminal and the application are seeing different contents and positions. It can be convenient to observe boot times for example, but should be disabled when starting any interactive application (e.g. an editor).
 
 ### Changing the escape character
 

@@ -118,6 +118,7 @@ const char menu_str[] =
 	"  F f        flip both DTR and RTS pins\r\n"
 	"  B b        send break\r\n"
 	"  C c        enable / disable capture\r\n"
+	"  T t        enable / disable timestamps on terminal\r\n"
 	"Enter the escape character again after this menu to use these commands.\r\n"
 	"";
 
@@ -278,6 +279,7 @@ time_t last_cap_sec = 0;
 struct timeval start_ts = { }; // timestamp of current line
 enum ts_mode ts_mode = TS_NONE;
 const char *ts_mode_str = NULL;
+int ts_term = 0;
 
 /* list made of port names (without slashes) delimited by commas */
 char *exclude_drivers = NULL;
@@ -1681,6 +1683,20 @@ void forward(int fd)
 					b_skip(&user_ibuf, 1);
 				}
 			}
+			else if (c == 't' || c == 'T') {
+				if (!ts_term &&
+				    b_puts(&user_obuf, "Enabling terminal timestamps\r\n", 30, 0)) {
+					ts_term = 1;
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+				else if (ts_term &&
+				         b_puts(&user_obuf, "Disabling terminal timestamps\r\n", 31, 0)) {
+					ts_term = 0;
+					in_esc = 0;
+					b_skip(&user_ibuf, 1);
+				}
+			}
 			else if (c == 'p' || c == 'P') { /* show port status */
 				show_port(fd, resp, sizeof(resp));
 				if (b_puts(&user_obuf, resp, strlen(resp), 0)) {
@@ -1707,7 +1723,23 @@ void forward(int fd)
 			b_skip(&user_ibuf, 1);
 			in_esc = 1;
 		}
-		xfer_buf(&port_ibuf, &user_obuf, chr_min, chr_max, -1, &in_utf8);
+
+		/* dump one line at a time and possibly emit the timestamp at
+		 * the beginning of next line.
+		 */
+		while (xfer_buf(&port_ibuf, &user_obuf, chr_min, chr_max, -1, &in_utf8) > 0) {
+			if (ts_term) {
+				static struct timeval prev_ts; // timestamp of previous line
+				static struct timeval line_ts; // timestamp of current line
+				char hdr[30];
+				int len;
+
+				gettimeofday(&line_ts, NULL);
+				len = write_ts(hdr, sizeof(hdr), (ts_mode > TS_NONE) ? ts_mode : TS_ABS, &prev_ts, &line_ts);
+				if (len && b_puts(&user_obuf, hdr, len, 0))
+					prev_ts = line_ts;
+			}
+		}
 	}
 
 	if (stdio_is_term) {
