@@ -1468,7 +1468,8 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 		if (c >= chr_min && c <= chr_max &&
 		    (!in_utf8 || *in_utf8 || c <= 0x80 || c >= 0x9f)) {
 			/* transfer as-is */
-			b_putchar(out, c);
+			if (!b_putchar(out, c))
+				break;
 		} else {
 			/* transcode to "<0xHH>" (6 chars) */
 			char tmp[7];
