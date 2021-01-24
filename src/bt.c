@@ -1460,10 +1460,11 @@ void fd_to_buf(int fd, struct buffer *buf, int capfd)
 
 /* transfer as many bytes as possible from <in> to <out>, encoding bytes that
  * are not between <chr_min> and <chr_max>. Input buffer is always realigned
- * once empty. The forwarding stops before character <esc>. Set esc to -1 to
- * ignore it. If in_utf8 is not null, it will be either 0 or 1 depending on
- * the sequence. The function always returns zero unless the escape character
- * was met.
+ * once empty. The forwarding stops after each new line, and before character
+ * <esc>. Set esc to -1 to ignore it. If in_utf8 is not null, it will be either
+ * 0 or 1 depending on the sequence. The function always returns zero for
+ * regular characters, >0 if it returns after copying a line feed, <0 if it
+ * stops before an escape character.
  */
 int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, int esc, int *in_utf8)
 {
@@ -1472,7 +1473,7 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 	while (in->len && out->len < BUFSIZE) {
 		c = b_peek(in);
 		if (c == esc)
-			return 1;
+			return -1;
 
 		/* only transfer the unprotected chars, unless they belong to
 		 * the unescaped C1 set of control characters which tends to
@@ -1501,6 +1502,8 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 		}
 
 		b_skip(in, 1);
+		if (c == '\n')
+			return 1;
 	}
 	return 0;
 }
@@ -1699,7 +1702,7 @@ void forward(int fd)
 		}
 
 		/* transfer between IN and opposite OUT buffers */
-		if (!in_esc && xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape, NULL)) {
+		if (!in_esc && xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape, NULL) < 0) {
 			/* we stopped in front of the escape character */
 			b_skip(&user_ibuf, 1);
 			in_esc = 1;
