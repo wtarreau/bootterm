@@ -1338,6 +1338,44 @@ void b_skip(struct buffer *buf, int num)
 		buf->data = buf->room = 0;
 }
 
+/* attempts to write a timestamp into output buffer <buf> which is <size> bytes
+ * long, based on <mode>, start_ts, <prev> and <line>. The return value is the
+ * snprintf() return value, that is, larger than <size> if it failed. A 30-char
+ * long buffer will never fail.
+ */
+int write_ts(char *out, int size, enum ts_mode mode, const struct timeval *prev, const struct timeval *line)
+{
+	int ret;
+
+	if (mode == TS_INIT) {
+		unsigned int  sec = line->tv_sec  - start_ts.tv_sec;
+		unsigned int usec = line->tv_usec - start_ts.tv_usec;
+
+		if (usec >= 1000000) { // overflow
+			usec += 1000000;
+			sec -= 1;
+		}
+		ret = snprintf(out, size, "[%6u.%06u] ", sec, usec);
+	} else if (mode == TS_LINE) {
+		unsigned int sec  = line->tv_sec  - prev->tv_sec;
+		unsigned int usec = line->tv_usec - prev->tv_usec;
+
+		if (!prev->tv_sec && !prev->tv_usec) { // first line
+			sec = 0;
+			usec = 0;
+		}
+		else if (usec >= 1000000) { // overflow
+			usec += 1000000;
+			sec -= 1;
+		}
+		ret = snprintf(out, size, "[%6u.%06u] ", sec, usec);
+	} else { // TS_ABS
+		ret = strftime(out, size, "[%Y%m%d-%H%M%S.", localtime(&line->tv_sec));
+		ret += snprintf(out+ret, size-ret, "%06u] ", (unsigned int)line->tv_usec);
+	}
+	return ret;
+}
+
 void write_to_capture(int fd, const struct buffer *buf, int len)
 {
 	static struct timeval prev_ts; // timestamp of previous line
@@ -1353,32 +1391,7 @@ void write_to_capture(int fd, const struct buffer *buf, int len)
 		if (ts_mode > TS_NONE && cap_bol) {
 			/* at beginning of line, must write a timestamp */
 			gettimeofday(&line_ts, NULL);
-			if (ts_mode == TS_INIT) {
-				unsigned int  sec = line_ts.tv_sec  - start_ts.tv_sec;
-				unsigned int usec = line_ts.tv_usec - start_ts.tv_usec;
-
-				if (usec >= 1000000) { // overflow
-					usec += 1000000;
-					sec -= 1;
-				}
-				ret = snprintf(hdr, sizeof(hdr), "[%6u.%06u] ", sec, usec);
-			} else if (ts_mode == TS_LINE) {
-				unsigned int sec  = line_ts.tv_sec  - prev_ts.tv_sec;
-				unsigned int usec = line_ts.tv_usec - prev_ts.tv_usec;
-
-				if (!prev_ts.tv_sec && !prev_ts.tv_usec) { // first line
-					sec = 0;
-					usec = 0;
-				}
-				else if (usec >= 1000000) { // overflow
-					usec += 1000000;
-					sec -= 1;
-				}
-				ret = snprintf(hdr, sizeof(hdr), "[%6u.%06u] ", sec, usec);
-			} else { // TS_ABS
-				ret = strftime(hdr, sizeof(hdr), "[%Y%m%d-%H%M%S.", localtime(&line_ts.tv_sec));
-				ret += snprintf(hdr+ret, sizeof(hdr)-ret, "%06u] ", (unsigned int)line_ts.tv_usec);
-			}
+			ret = write_ts(hdr, sizeof(hdr), ts_mode, &prev_ts, &line_ts);
 			ret = write(fd, hdr, ret);
 			cap_bol = 0;
 		}
