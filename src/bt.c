@@ -53,7 +53,7 @@
 #define BUFSIZE 1024
 
 #ifndef VERSION
-#define VERSION "0.1.0"
+#define VERSION "0.2.0"
 #endif
 
 #ifndef MIN
@@ -73,7 +73,7 @@ const char version_str[] =
 #if defined(TCGETS2) && !defined(NO_TCGETS2)
 	"Built with support for custom baud rates (TCGETS2).\n"
 #endif
-	"Copyright (C) 2020 Willy Tarreau <w@1wt.eu>\n"
+	"Copyright (C) 2020-2021 Willy Tarreau <w@1wt.eu>\n"
 	"This is free software: you are encouraged to improve and redistribute it.\n"
 	"There is no warranty of any kind, see the source for license details.\n";
 
