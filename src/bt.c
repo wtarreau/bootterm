@@ -92,6 +92,7 @@ const char usage_msg[] =
 	"  -b <baud>    specify baud rate (BT_PORT_BAUD_RATE; default:115200; 0=current)\n"
 	"  -c {none|fixed|timed} enable capture to file (BT_CAPTURE_MODE)\n"
 	"  -t {none|abs|init|line} enable timestamps in captures (BT_TIMESTAMP_MODE)\n"
+	"  -T           enable timestamps in terminal (see -t for formats)\n"
 	"  -e <escape>  escape character or ASCII code  (default: 29 = Ctrl-])\n"
 	"  -f <fmt>     capture file name (default: 'bootterm-%%Y%%m%%d-%%H%%M%%S.log')\n"
 	"  -V           show version and license\n"
@@ -1933,6 +1934,10 @@ int main(int argc, char **argv)
 
 		case 'q':
 			quiet = 1;
+			break;
+
+		case 'T':
+			ts_term = 1;
 			break;
 
 		case 'a':
