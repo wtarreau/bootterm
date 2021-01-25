@@ -1460,22 +1460,19 @@ void fd_to_buf(int fd, struct buffer *buf, int capfd)
 		buf->room = 0;
 }
 
-/* transfer as many bytes as possible from <in> to <out>, encoding bytes that
- * are not between <chr_min> and <chr_max>. Input buffer is always realigned
- * once empty. The forwarding stops after each new line, and before character
- * <esc>. Set esc to -1 to ignore it. If in_utf8 is not null, it will be either
- * 0 or 1 depending on the sequence. The function always returns zero for
- * regular characters, >0 if it returns after copying a line feed, <0 if it
- * stops before an escape character.
+/* transfer as many bytes as possible from port buffer <in> to user buffer
+ * <out>, encoding bytes that are not between <chr_min> and <chr_max>. Input
+ * buffer is always realigned once empty. The forwarding stops after each new
+ * line. If in_utf8 is not null, it will be set to either 0 or 1 depending on
+ * the sequence. The function always returns zero for regular characters, >0
+ * if it returns after copying a line feed.
  */
-int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, int esc, int *in_utf8)
+int xfer_port_to_user(struct buffer *in, struct buffer *out, int chr_min, int chr_max, int *in_utf8)
 {
 	int c;
 
 	while (in->len && out->len < BUFSIZE) {
 		c = b_peek(in);
-		if (c == esc)
-			return -1;
 
 		/* only transfer the unprotected chars, unless they belong to
 		 * the unescaped C1 set of control characters which tends to
@@ -1506,6 +1503,29 @@ int xfer_buf(struct buffer *in, struct buffer *out, int chr_min, int chr_max, in
 		b_skip(in, 1);
 		if (c == '\n')
 			return 1;
+	}
+	return 0;
+}
+
+/* transfer as many bytes as possible from user buffer <in> to port buffer
+ * <out>. Input buffer is always realigned once empty. The forwarding stops
+ * before character <esc>. Set esc to -1 to ignore it. The function always
+ * returns zero for regular characters, <0 if it stops before an escape
+ * character.
+ */
+int xfer_user_to_port(struct buffer *in, struct buffer *out, int esc)
+{
+	int c;
+
+	while (in->len && out->len < BUFSIZE) {
+		c = b_peek(in);
+		if (c == esc)
+			return -1;
+
+		if (!b_putchar(out, c, MARGIN))
+			break;
+
+		b_skip(in, 1);
 	}
 	return 0;
 }
@@ -1718,7 +1738,7 @@ void forward(int fd)
 		}
 
 		/* transfer between IN and opposite OUT buffers */
-		if (!in_esc && xfer_buf(&user_ibuf, &port_obuf, 0, 255, escape, NULL) < 0) {
+		if (!in_esc && xfer_user_to_port(&user_ibuf, &port_obuf, escape) < 0) {
 			/* we stopped in front of the escape character */
 			b_skip(&user_ibuf, 1);
 			in_esc = 1;
@@ -1727,7 +1747,7 @@ void forward(int fd)
 		/* dump one line at a time and possibly emit the timestamp at
 		 * the beginning of next line.
 		 */
-		while (xfer_buf(&port_ibuf, &user_obuf, chr_min, chr_max, -1, &in_utf8) > 0) {
+		while (xfer_port_to_user(&port_ibuf, &user_obuf, chr_min, chr_max, &in_utf8) > 0) {
 			if (ts_term) {
 				static struct timeval prev_ts; // timestamp of previous line
 				static struct timeval line_ts; // timestamp of current line
