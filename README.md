@@ -244,6 +244,8 @@ Example of capture with line-relative timestamps, showing a kernel decompression
 
 In addition, timestamps may also be temporarily enabled on the terminal by pressing 'T' after the escape character. The timestamp mode configured above will be used, except if not set, in which  case the absolute mode will be used. It is important to understand that timestamps on a terminal will quickly cause trouble on the output since the terminal and the application are seeing different contents and positions. It can be convenient to observe boot times for example, but should be disabled when starting any interactive application (e.g. an editor).
 
+Please note that there is a subtle difference between terminal timestamp and file-based captures. In file-based captures, the time is taken when the first character is printed after a line feed. This provides the most accurate timing between two consecutive lines because it will take the processing time into account. However on the terminal it cannot be done exactly this way without rendering the terminal very painful to use, because on a typical prompt, the leading timestamp would be missing until the user presses a character that would suddenly cause the timestamp to be printed before it is echoed. Thus on the terminal, the timestamp is calculated when the cursor goes to the beginning of a new line, and is (re-)printed every time the cursor goes to the beginning of the line. This means that on the terminal, the processing time, if any, will usually be accounted as part of the time needed to print the next line.
+
 ### Changing the escape character
 
 The escape character may be specified either as a single character after -e or as an integer or hexadecimal value representing the ASCII code of this character.

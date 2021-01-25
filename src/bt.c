@@ -135,6 +135,30 @@ enum ts_mode {
 	TS_LINE, // time relative to previous line
 };
 
+/* In order to better deal with isolated LF, isolated CR, CRLF and LFCR when it
+ * comes to inserting timestamps, we'll see a line in 4 different states:
+ * Beginning-Of-New-Line (BONL), Beginning-Of-Same-Line (BOSL), Same-Line (SL),
+ * New-Line (NL). The transitions will occur like this:
+ *
+ *         |        CR                 The timestamp is emitted after entering
+ *    /\   v   ---------->             the BONL state on LF, and before leaving
+ * LF \_> BONL <---------- BOSL        BOSL for SL. This deals with line
+ *         ^        LF     *| ^        overwriting using CR and LFCR cleanly.
+ *      CR |                V | CR     BONL ensures a TS was already printed,
+ *         NL <------------ SL         so none is needed on CR there. In BOSL,
+ *                                     a timestamp is needed only before data.
+ *                                     SL is assumed first. Time is retrieved
+ *                                     when entering BONL.
+ *
+ * We stay in NL until a CR is there so that even with LFxxxCR we emit the TS.
+ */
+enum line_state {
+	LS_BONL,               // beginning of new line
+	LS_BOSL,               // beginning of same line
+	LS_SL,                 // same line (at least one char)
+	LS_NL,                 // new line (changed but not homed)
+};
+
 struct serial {
 	char *name;            // device name without /dev
 	char *driver;          // driver name (usually a short word)
@@ -278,6 +302,7 @@ int cap_fd = -1; // -1 = no capture in progress
 time_t last_cap_sec = 0;
 struct timeval start_ts = { }; // timestamp of current line
 enum ts_mode ts_mode = TS_NONE;
+enum line_state line_state = LS_SL; // anywhere on the line
 const char *ts_mode_str = NULL;
 int ts_term = 0;
 
@@ -1469,10 +1494,49 @@ void fd_to_buf(int fd, struct buffer *buf, int capfd)
  */
 int xfer_port_to_user(struct buffer *in, struct buffer *out, int chr_min, int chr_max, int *in_utf8)
 {
+	enum line_state new_state;
+	static struct timeval prev_ts; // timestamp of previous line
+	static struct timeval line_ts; // timestamp of current line
+	char hdr[30];
+	int len;
 	int c;
 
 	while (in->len && out->len < BUFSIZE) {
+		new_state = line_state;
 		c = b_peek(in);
+
+		/* retrieve current time when entering BONL */
+		if ((c == '\n' && (line_state == LS_BONL || line_state == LS_BOSL)) ||
+		    (c == '\r' && line_state == LS_NL)) {
+			new_state = LS_BONL;
+		}
+		else if (line_state == LS_BONL && c == '\r') {
+			new_state = LS_BOSL; /* TS going to be overwritten */
+		}
+		else if (line_state != LS_NL && c != '\n' && c != '\r') {
+			new_state = LS_SL;
+		}
+		else if (line_state == LS_SL) {
+			if (c == '\n')
+				new_state = LS_NL;
+			else if (c == '\r')
+				new_state = LS_BOSL;
+		}
+
+		/* If we're leaving BOSL for SL, we're going to overwrite the
+		 * TS header so we must print it again before attempting to
+		 * emit the character.
+		 */
+		if (line_state == LS_BOSL && new_state == LS_SL) {
+			/* rewrite current line's TS */
+			if (ts_term) {
+				len = write_ts(hdr, sizeof(hdr),
+					       (ts_mode > TS_NONE) ? ts_mode : TS_ABS, &prev_ts, &line_ts);
+				b_puts(out, hdr, len, 0);
+				/* commit the change since printed already */
+				line_state = new_state;
+			}
+		}
 
 		/* only transfer the unprotected chars, unless they belong to
 		 * the unescaped C1 set of control characters which tends to
@@ -1492,6 +1556,21 @@ int xfer_port_to_user(struct buffer *in, struct buffer *out, int chr_min, int ch
 			if (!b_puts(out, tmp, 6, MARGIN))
 				break;
 		}
+
+		/* need to print the TS at the beginning of this new line */
+		if (new_state == LS_BONL) {
+			prev_ts = line_ts;
+			gettimeofday(&line_ts, NULL);
+			/* print */
+			if (ts_term) {
+				len = write_ts(hdr, sizeof(hdr),
+					       (ts_mode > TS_NONE) ? ts_mode : TS_ABS, &prev_ts, &line_ts);
+				b_puts(out, hdr, len, 0);
+			}
+		}
+
+		/* commit the new state */
+		line_state = new_state;
 
 		if (in_utf8) {
 			if (*in_utf8 && (c < 0x80 || c >= 0xc0))
@@ -1744,21 +1823,8 @@ void forward(int fd)
 			in_esc = 1;
 		}
 
-		/* dump one line at a time and possibly emit the timestamp at
-		 * the beginning of next line.
-		 */
 		while (xfer_port_to_user(&port_ibuf, &user_obuf, chr_min, chr_max, &in_utf8) > 0) {
-			if (ts_term) {
-				static struct timeval prev_ts; // timestamp of previous line
-				static struct timeval line_ts; // timestamp of current line
-				char hdr[30];
-				int len;
-
-				gettimeofday(&line_ts, NULL);
-				len = write_ts(hdr, sizeof(hdr), (ts_mode > TS_NONE) ? ts_mode : TS_ABS, &prev_ts, &line_ts);
-				if (len && b_puts(&user_obuf, hdr, len, 0))
-					prev_ts = line_ts;
-			}
+			/* xfer everything */
 		}
 	}
 
