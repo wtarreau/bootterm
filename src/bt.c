@@ -104,7 +104,8 @@ const char usage_msg[] =
 	"number, last port is used. Use '?' or 'help' in baud rate to list them all.\n"
 	"Comma-delimited lists of ports to exclude/include/restrict may be passed in\n"
 	"BT_SCAN_EXCLUDE_PORTS, BT_SCAN_INCLUDE_PORTS, and BT_SCAN_RESTRICT_PORTS.\n"
-	"BT_SCAN_EXCLUDE_DRIVERS ignores ports matching these drivers.\n"
+	"BT_SCAN_EXCLUDE_DRIVERS ignores ports matching these drivers. BT_PORT_CRLF maps\n"
+	"LF to CRLF if 1, CR to CRLF if 2, otherwise nothing (used for raw terminals).\n"
 	"";
 
 /* Note that we need CRLF in raw mode */
@@ -122,6 +123,12 @@ const char menu_str[] =
 	"  T t        enable / disable timestamps on terminal\r\n"
 	"Enter the escape character again after this menu to use these commands.\r\n"
 	"";
+
+enum crlf_mode {
+	CRLF_NORMAL = 0,
+	CRLF_LFONLY = 1,
+	CRLF_CRONLY = 2,
+};
 
 enum cap_mode {
 	CAP_NONE = 0,
@@ -288,6 +295,7 @@ struct serial serial_ports[MAXPORTS];
 const char *baud_rate_str = NULL;
 const char *cap_mode_str = NULL;
 enum cap_mode cap_mode = CAP_NONE;
+enum crlf_mode crlf_mode = CRLF_NORMAL;
 const char *capture_fmt = "bootterm-%Y%m%d-%H%M%S.log";
 unsigned char escape  = 0x1d; // Ctrl-]
 unsigned char chr_min = 0;
@@ -1486,6 +1494,62 @@ void fd_to_buf(int fd, struct buffer *buf, int capfd)
 		buf->room = 0;
 }
 
+/* receive as much as possible from the fd to the buffer, and applies CRLF
+ * transformations. In order to make sure we'll always have enough room to
+ * insert the missing CRs or LFs, we read no more than 1/2 of the buffer
+ * room at a time.
+ */
+void fd_to_buf_slow(int fd, struct buffer *buf, int capfd)
+{
+	unsigned char tmpbuf[(BUFSIZE+1)/2];
+	int room;
+	ssize_t ret;
+	int i;
+	int wpos;
+	int wtot;
+
+	if (buf->room < 0)
+		return;
+
+	room = MIN(BUFSIZE - buf->len, BUFSIZE - buf->room);
+	if (room < 2)
+		return;
+	room /= 2;
+
+	ret = read(fd, tmpbuf, room);
+	if (ret <= 0) {
+		/* error or close */
+		if (ret == 0 || errno != EAGAIN)
+			buf->room = -1;
+		return;
+	}
+
+	wtot = 0; wpos = buf->room;
+	for (i = 0; i < ret; i++) {
+		if ((tmpbuf[i] == '\n' && crlf_mode == CRLF_LFONLY) ||
+		    (tmpbuf[i] == '\r' && crlf_mode == CRLF_CRONLY)) {
+			buf->b[wpos++] = '\r';
+			if (wpos == BUFSIZE)
+				wpos = 0;
+			buf->b[wpos++] = '\n';
+			if (wpos == BUFSIZE)
+				wpos = 0;
+			wtot += 2;
+		} else {
+			buf->b[wpos++] = tmpbuf[i];
+			if (wpos == BUFSIZE)
+				wpos = 0;
+			wtot++;
+		}
+	}
+
+	if (capfd >= 0)
+		write_to_capture(capfd, buf, wtot);
+
+	buf->len  += wtot;
+	buf->room  = wpos;
+}
+
 /* transfer as many bytes as possible from port buffer <in> to user buffer
  * <out>, encoding bytes that are not between <chr_min> and <chr_max>. Input
  * buffer is always realigned once empty. The forwarding stops after each new
@@ -1723,7 +1787,7 @@ void forward(int fd)
 			fd_to_buf(0, &user_ibuf, -1);
 
 		if (FD_ISSET(fd, &rfds))
-			fd_to_buf(fd, &port_ibuf, cap_fd);
+			fd_to_buf_slow(fd, &port_ibuf, cap_fd);
 
 		if (in_esc) {
 			char resp[BUFSIZE];
@@ -1840,8 +1904,8 @@ void forward(int fd)
 int main(int argc, char **argv)
 {
 	const char *progname;
-	char *curr = NULL;
-	char *arg = NULL;
+	const char *curr = NULL;
+	const char *arg = NULL;
 	int idx, opt;
 	int do_list = 0;
 	int do_wait_new = 0;
@@ -1869,6 +1933,9 @@ int main(int argc, char **argv)
 	do_wait_new = !do_wait_any && !!get_conf("scan.wait-new");
 
 	baud_rate_str = get_conf("port.baud-rate");
+	arg = get_conf("port.crlf");
+	if (arg)
+		crlf_mode = atoi(arg);
 	cap_mode_str = get_conf("capture.mode");
 	ts_mode_str = get_conf("timestamp.mode");
 

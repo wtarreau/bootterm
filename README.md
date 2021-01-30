@@ -281,6 +281,20 @@ Running at wrong speeds or connecting during a boot sequence often results in so
 
 In order to address this, bootterm can block dangerous characters and print them encoded instead. It will always block raw and UTF-8 encoded C1 codes (0x80-0x9F with or without the 0xC2 prefix), as these are always terminal configuration codes which should never be sent to the terminal emulator. In addition it's possible to restrict the range of printable characters using `-m` and `-M`.
 
+### Remapping CR to CRLF or LF to CRLF
+
+In raw mode, terminals emit CR and LF separately and expect them both to be received. This is true as well for the user terminal. If the device being connected to works in raw mode but does not emit CR or does not emit LF, then the user terminal will quickly be confusing and painful to use. An environment variable, `BT_PORT_CRLF` may be used to force a remapping of input characters to the expected CRLF pair:
+
+| BT_PORT_CRLF | Behavior | Use case |
+|--------------|----------|----------|
+|      0       | no remapping | all the time |
+|      1       | LF is replaced by CRLF | when lines look like stairs |
+|      2       | CR is replaced by CRLF | when the same line always gets overwritten |
+
+Note that in order to make this compatible with captures and terminal timestamps, the remapping is performed inside the port buffer before the captures, and as such the fixed CRLF sequence will appear in the captures.
+
+Most users will never need to change this setting.
+
 ## Motivation
 
 The first motivation behind writing bootterm was that when working with single board computers (SBC), the serial port is the only interface available during most of the development or exploration of the board, and that sadly, the available tools are either pretty poorly designed, or incomplete as they were not initially made for this purpose. Some tools like `screen` use particularly inconvenient key mappings making it a real pain to use the line editing on some devices, others like `minicom` reconfigure the terminal disabling scrolling and making copy-paste a nightmare. Some like `cu` were not initially designed for this and nobody ever knows the right command-line options nor how to quit it. Then comes the myriad of Python 3-liners which do no error checking, resulting in spinning loops when a port is disconnected and the port being renumbered once reconnected, or conversely crashes and backtraces when facing binary character sequences that do not match UTF-8. Not to mention that many times they can't even install as they depend on various modules that are incompatible with those installed on the local machine.
