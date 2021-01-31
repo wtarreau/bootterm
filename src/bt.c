@@ -1374,6 +1374,80 @@ void b_skip(struct buffer *buf, int num)
 		buf->data = buf->room = 0;
 }
 
+/* make a timeval from <sec>, <usec> */
+static inline struct timeval tv_set(time_t sec, suseconds_t usec)
+{
+	struct timeval ret = { .tv_sec = sec, .tv_usec = usec };
+	return ret;
+}
+
+/* used to unset a timeout */
+static inline struct timeval tv_unset()
+{
+	return tv_set(0, ~0);
+}
+
+/* used to zero a timeval */
+static inline struct timeval tv_zero()
+{
+	return tv_set(0, 0);
+}
+
+/* returns true if the timeval is set */
+static inline int tv_isset(struct timeval tv)
+{
+	return tv.tv_usec != ~0;
+}
+
+/* returns true if <a> is before <b>, taking account unsets */
+static inline int tv_isbefore(const struct timeval a, const struct timeval b)
+{
+	return !tv_isset(b) ? 1 :
+	       !tv_isset(a) ? 0 :
+	       ( a.tv_sec < b.tv_sec || (a.tv_sec == b.tv_sec && a.tv_usec < b.tv_usec));
+}
+
+/* returns the lowest of the two timers, for use in delay computation */
+static inline struct timeval tv_min(const struct timeval a, const struct timeval b)
+{
+	if (tv_isbefore(a, b))
+		return a;
+	else
+		return b;
+}
+
+/* returns the normalized sum of the <from> plus <off> */
+static inline struct timeval tv_add(const struct timeval from, const struct timeval off)
+{
+	struct timeval ret;
+
+	ret.tv_sec  = from.tv_sec  + off.tv_sec;
+	ret.tv_usec = from.tv_usec + off.tv_usec;
+
+	if (ret.tv_usec >= 1000000) {
+		ret.tv_usec -= 1000000;
+		ret.tv_sec  += 1;
+	}
+	return ret;
+}
+
+/* returns the delay between <past> and <now> or zero if <past> is after <now> */
+static inline struct timeval tv_diff(const struct timeval past, const struct timeval now)
+{
+	struct timeval ret = { .tv_sec = 0, .tv_usec = 0 };
+
+	if (tv_isbefore(past, now)) {
+		ret.tv_sec  = now.tv_sec  - past.tv_sec;
+		ret.tv_usec = now.tv_usec - past.tv_usec;
+
+		if ((signed)ret.tv_usec < 0) { // overflow
+			ret.tv_usec += 1000000;
+			ret.tv_sec  -= 1;
+		}
+	}
+	return ret;
+}
+
 /* attempts to write a timestamp into output buffer <buf> which is <size> bytes
  * long, based on <mode>, start_ts, <prev> and <line>. The return value is the
  * snprintf() return value, that is, larger than <size> if it failed. A 30-char
@@ -1381,30 +1455,18 @@ void b_skip(struct buffer *buf, int num)
  */
 int write_ts(char *out, int size, enum ts_mode mode, const struct timeval *prev, const struct timeval *line)
 {
+	struct timeval  t;
 	int ret;
 
 	if (mode == TS_INIT) {
-		unsigned int  sec = line->tv_sec  - start_ts.tv_sec;
-		unsigned int usec = line->tv_usec - start_ts.tv_usec;
-
-		if (usec >= 1000000) { // overflow
-			usec += 1000000;
-			sec -= 1;
-		}
-		ret = snprintf(out, size, "[%6u.%06u] ", sec, usec);
+		t = tv_diff(start_ts, *line);
+		ret = snprintf(out, size, "[%6u.%06u] ", (unsigned)t.tv_sec, (unsigned)t.tv_usec);
 	} else if (mode == TS_LINE) {
-		unsigned int sec  = line->tv_sec  - prev->tv_sec;
-		unsigned int usec = line->tv_usec - prev->tv_usec;
-
-		if (!prev->tv_sec && !prev->tv_usec) { // first line
-			sec = 0;
-			usec = 0;
-		}
-		else if (usec >= 1000000) { // overflow
-			usec += 1000000;
-			sec -= 1;
-		}
-		ret = snprintf(out, size, "[%6u.%06u] ", sec, usec);
+		if (!tv_isset(*prev)) { // first line
+			t = tv_zero();
+		} else
+			t = tv_diff(*prev, *line);
+		ret = snprintf(out, size, "[%6u.%06u] ", (unsigned)t.tv_sec, (unsigned)t.tv_usec);
 	} else { // TS_ABS
 		ret = strftime(out, size, "[%Y%m%d-%H%M%S.", localtime(&line->tv_sec));
 		ret += snprintf(out+ret, size-ret, "%06u] ", (unsigned int)line->tv_usec);
