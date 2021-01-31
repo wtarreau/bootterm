@@ -1769,6 +1769,8 @@ void forward(int fd)
 	struct buffer port_obuf = { };
 	struct buffer user_ibuf = { };
 	struct buffer user_obuf = { };
+	struct timeval escape_timeout = tv_unset();
+	struct timeval now;
 	int in_utf8 = 0;
 	int in_esc = 0;
 
@@ -1809,6 +1811,7 @@ void forward(int fd)
 	 */
 	while (((user_obuf.len + port_ibuf.len || port_ibuf.room >= 0) && (user_obuf.data >= 0)) ||
 	       ((port_obuf.len + user_ibuf.len || user_ibuf.room >= 0) && (port_obuf.data >= 0 && port_ibuf.room >= 0))) {
+		struct timeval interval;
 		int cnt;
 
 		if (user_ibuf.room >= 0 && user_ibuf.len < BUFSIZE)
@@ -1831,8 +1834,22 @@ void forward(int fd)
 		else
 			FD_CLR(fd, &wfds);
 
-		cnt = select(FD_SETSIZE, &rfds, &wfds, NULL, NULL);
-		if (cnt <= 0) // signal
+		gettimeofday(&now, NULL);
+		interval = tv_unset();
+
+		if (in_esc)
+			interval = tv_min(interval, tv_diff(now, escape_timeout));
+
+		cnt = select(FD_SETSIZE, &rfds, &wfds, NULL, tv_isset(interval) ? &interval : NULL);
+
+		gettimeofday(&now, NULL);
+
+		if (in_esc && !tv_isbefore(now, escape_timeout)) {
+			/* abort escape mode */
+			in_esc = 0;
+		}
+
+		if (cnt <= 0) // signal or timeout
 			continue;
 
 		set_capture_name();
@@ -1945,8 +1962,11 @@ void forward(int fd)
 
 		/* transfer between IN and opposite OUT buffers */
 		if (!in_esc && xfer_user_to_port(&user_ibuf, &port_obuf, escape) < 0) {
-			/* we stopped in front of the escape character */
+			/* we stopped in front of the escape character, let's
+			 * wait up to two seconds for the sequence to be entered.
+			 */
 			b_skip(&user_ibuf, 1);
+			escape_timeout = tv_add(now, tv_set(2, 0));
 			in_esc = 1;
 		}
 
