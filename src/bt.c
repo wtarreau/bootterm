@@ -98,14 +98,14 @@ const char usage_msg[] =
 	"  -V           show version and license\n"
 	"  -B           send a break sequence before starting the terminal\n"
 	"  -N           do not launch the terminal, just quit\n"
+	"  -L <mode>    new line mode: 0=CRLF, 1=LF only, 2=CR only (BT_PORT_CRLF)\n"
 	"\n"
 	"Ports are sorted in reverse registration order so that port 0 is the most\n"
 	"recently added one. A number may be set instead of the port. With no name nor\n"
 	"number, last port is used. Use '?' or 'help' in baud rate to list them all.\n"
 	"Comma-delimited lists of ports to exclude/include/restrict may be passed in\n"
 	"BT_SCAN_EXCLUDE_PORTS, BT_SCAN_INCLUDE_PORTS, and BT_SCAN_RESTRICT_PORTS.\n"
-	"BT_SCAN_EXCLUDE_DRIVERS ignores ports matching these drivers. BT_PORT_CRLF maps\n"
-	"LF to CRLF if 1, CR to CRLF if 2, otherwise nothing (used for raw terminals).\n"
+	"BT_SCAN_EXCLUDE_DRIVERS ignores ports matching these drivers.\n"
 	"";
 
 /* Note that we need CRLF in raw mode */
@@ -2170,6 +2170,13 @@ int main(int argc, char **argv)
 		case 'M':
 			if (!parse_byte(arg, &chr_max))
 				die(1, "failed to parse argument for -%c\n", opt);
+			arg = NULL;
+			break;
+
+		case 'L':
+			if (!arg)
+				die(1, "missing argument for -%c\n", opt);
+			crlf_mode = atoi(arg);
 			arg = NULL;
 			break;
 
