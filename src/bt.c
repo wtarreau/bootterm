@@ -1770,7 +1770,9 @@ void forward(int fd)
 	struct buffer user_ibuf = { };
 	struct buffer user_obuf = { };
 	struct timeval escape_timeout = tv_unset();
+	struct timeval flash_timeout = tv_unset();
 	struct timeval now;
+	int term_flashing = 0;
 	int in_utf8 = 0;
 	int in_esc = 0;
 
@@ -1840,6 +1842,9 @@ void forward(int fd)
 		if (in_esc)
 			interval = tv_min(interval, tv_diff(now, escape_timeout));
 
+		if (term_flashing)
+			interval = tv_min(interval, tv_diff(now, flash_timeout));
+
 		cnt = select(FD_SETSIZE, &rfds, &wfds, NULL, tv_isset(interval) ? &interval : NULL);
 
 		gettimeofday(&now, NULL);
@@ -1847,6 +1852,18 @@ void forward(int fd)
 		if (in_esc && !tv_isbefore(now, escape_timeout)) {
 			/* abort escape mode */
 			in_esc = 0;
+			/* flash the screen by reversing it */
+			if (stdio_is_term) {
+				b_puts(&user_obuf, "\e[?5h", 5, 0);
+				term_flashing = 1;
+				flash_timeout = tv_add(now, tv_set(0, 100000)); // 100ms flash
+			}
+		}
+
+		if (term_flashing && !tv_isbefore(now, flash_timeout)) {
+			/* restore the terminal */
+			b_puts(&user_obuf, "\e[?5l", 5, 0);
+			term_flashing = 0;
 		}
 
 		if (cnt <= 0) // signal or timeout
@@ -1973,6 +1990,11 @@ void forward(int fd)
 		while (xfer_port_to_user(&port_ibuf, &user_obuf, chr_min, chr_max, &in_utf8) > 0) {
 			/* xfer everything */
 		}
+	}
+
+	if (stdio_is_term && term_flashing) {
+		/* restore the terminal now */
+		write(1, "\e[?5l", 5);
 	}
 
 	if (stdio_is_term) {

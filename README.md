@@ -46,7 +46,7 @@ $ bt -l
 
 In the example above, `ttyUSB2` will be used when no option is specified (which is indicated by the star in front of the port number). Otherwise, running `bt ttyUSB2`, `bt /dev/ttyS0`, or anything else will also do what is expected. The help is shown with `bt -h`.
 
-Once connected, the default escape character is the same as telnet: Ctrl-] (Control and right-square-bracket). After the escape character, a single character is expected to issue an internal command. Quitting is achieved by pressing `q` (either upper or lower case) or `.` (dot) after the escape character. Sending the escape character itself is possible by issuing it again. A help page is available with `h` or `?`:
+Once connected, the default escape character is the same as telnet: Ctrl-] (Control and right-square-bracket). After the escape character, a single character is expected to issue an internal command. Quitting is achieved by pressing `q` (either upper or lower case) or `.` (dot) after the escape character. Sending the escape character itself is possible by issuing it again. If the command that must follow the escape character doesn't arrive within two seconds, the escape character is ignored, and the terminal will emit a visible flash when supported, to indicate the user that the escape sequence was aborted. A help page is available with `h` or `?`:
 
 ```
 $ bt
