@@ -870,8 +870,12 @@ int file_isatty(const char *devname)
 		ret = 0;
 
 #ifdef __linux__
-	/* On Linux, only keep terminals having CLOCAL set, those without are local consoles */
-	if (ret && (ioctl(fd, TCGETS, &tio) != 0 || !(tio.c_cflag & CLOCAL)))
+	/* On Linux, unless there is a real port_number indicating it's a
+	 * hardware device, only keep terminals having CLOCAL set, those
+	 * without are local consoles.
+	 */
+	if (ret && (ioctl(fd, TCGETS, &tio) != 0 ||
+		    (!(tio.c_cflag & CLOCAL) && !file_exists("/sys/class/tty/%s/device/port_number", devname+5))))
 		ret = 0;
 #endif
 
