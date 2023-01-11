@@ -1998,7 +1998,9 @@ void forward(int fd)
 
 	if (stdio_is_term && term_flashing) {
 		/* restore the terminal now */
-		write(1, "\e[?5l", 5);
+		if(write(1, "\e[?5l", 5) < 0) {
+			die(5, "Failed to restore terminal after flashing");
+		}
 	}
 
 	if (stdio_is_term) {
