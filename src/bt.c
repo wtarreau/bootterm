@@ -1779,6 +1779,7 @@ void forward(int fd)
 	int term_flashing = 0;
 	int in_utf8 = 0;
 	int in_esc = 0;
+	int err = 0;
 
 	if (isatty(0) && isatty(1)) {
 		struct termios tio;
@@ -1998,15 +1999,19 @@ void forward(int fd)
 
 	if (stdio_is_term && term_flashing) {
 		/* restore the terminal now */
-		write(1, "\e[?5l", 5);
+		if (write(1, "\e[?5l", 5) < 0)
+			err = 1;
 	}
 
 	if (stdio_is_term) {
 		/* restore settings and skip current line */
 		if (tcsetattr(0, TCSANOW, &tio_bck) != 0)
-			die(4, "Failed to restore stdio settings. Try 'stty sane'\n");
+			err = 1;
 		putchar('\n');
 	}
+
+	if (err)
+		die(4, "Failed to restore stdio settings. Try 'stty sane'\n");
 }
 
 int main(int argc, char **argv)
