@@ -92,6 +92,7 @@ DRAM:  64 MiB
 ```
 
 One particularly appreciable case is when connecting to an emulated port, such as below on a NanoPI NEO2 running Armbian:
+
 ```
 $ bt -n
 2 ports found, waiting for a new one...
@@ -128,6 +129,7 @@ Escape character is 'Ctrl-]'. Use escape followed by '?' for help.
 ```
 
 It is also possible to enable this port selection mode by default using `BT_SCAN_WAIT_ANY`:
+
 ```
 $ export BT_SCAN_EXCLUDE_PORTS=ttyS*
 $ export BT_SCAN_WAIT_ANY=1
@@ -138,6 +140,7 @@ Waiting for one port to appear...
 It is probably what most laptop users will want to do so as never to have to pass any argument and automatically connect to a USB serial port.
 
 One may also exclude some drivers from the scan using `BT_SCAN_EXCLUDE_DRIVERS`, which can sometimes be more convenient to ignore some known uninteresting internal devices:
+
 ```
 $ bt -l
  port |  age (sec) | device     | driver           | description
@@ -174,6 +177,7 @@ It is interesting to note above that the hardware does not support 74880 bauds a
 ### Using bootterm to detect ports
 
 Bootterm supports a "print" mode. In this mode it will simply print the device name without the leading `/dev/`. It can be convenient as an assistant to other flashing tools to wait for a port and print its name. By default the newly detected port is reported however, and it is wise to switch to quiet mode to avoid intermediary information:
+
 ```
 $ bt -np
 4 ports found, waiting for a new one...
@@ -187,6 +191,7 @@ ttyUSB2
 ```
 
 Thus a script that needs to connect to the port as early as possible to reprogram a board could be doing something like this to wait for the device to show up:
+
 ```
 PORT=$(bt -npq)
 if [ -n "$PORT" ]; then
@@ -221,11 +226,13 @@ In all cases, the files are only appended to and never truncated, so that bootte
 The `fixed` mode usually is the one that users will want to capture a session when dumping a boot loader's configuration or the kernel's boot messages. The `timed` mode can be useful when connecting to a port waiting for rare or periodic events in order to get a dated file. The file name is defined by the format passed to `-f`, which defaults to the current date and time. It uses `strftime()` so please check this man page to get all format options supported on your system.
 
 Thus when exploring a new device, one would likely use:
+
 ```
 $ bt -c fixed
 ```
 
 And when collecting event logs from a server with one file per day:
+
 ```
 $ bt -c timed -f "server-%Y%m%d.log"
 ```
@@ -257,6 +264,7 @@ $ bt -e1
 ```
 
 Those coming from tmux would rather use Ctrl-B:
+
 ```
 $ bt -e2
 ```
