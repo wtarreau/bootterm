@@ -27,7 +27,7 @@ $ make install PREFIX=~/.local
 $ (or "sudo make install" for a system-wide installation)
 ```
 
-The program comes with no other dependency than a basic libc and produces a single binary (`bt`). It can easily be cross-compiled by setting `CROSS_COMPILE` or `CC`, though the makefile only adds unneeded abstraction and could simply be bypassed (please check it, it's self-explanatory). It was tested on several Linux distros and platforms (i386, x86_64, arm, aarch64), on macOS, on FreeBSD 12 (arm64) and on AIX 5.1 (ppc).
+The program comes with no other dependency than a basic libc and produces a single binary (`bt`). It can easily be cross-compiled by setting `CROSS_COMPILE` or `CC`, though the makefile only adds unneeded abstraction and could simply be bypassed (please check it, it's self-explanatory). It was tested on several Linux distros and platforms (i386, x86\_64, arm, aarch64), on macOS, on FreeBSD 12 (arm64) and on AIX 5.1 (ppc).
 
 ## Using it
 
@@ -285,7 +285,7 @@ In order to address this, bootterm can block dangerous characters and print them
 
 In raw mode, terminals emit CR and LF separately and expect them both to be received. This is true as well for the user terminal. If the device being connected to works in raw mode but does not emit CR or does not emit LF, then the user terminal will quickly be confusing and painful to use. An environment variable, `BT_PORT_CRLF` may be used to force a remapping of input characters to the expected CRLF pair:
 
-| BT_PORT_CRLF | Behavior | Use case |
+| BT\_PORT\_CRLF | Behavior | Use case |
 |--------------|----------|----------|
 |      0       | no remapping | all the time |
 |      1       | LF is replaced by CRLF | when lines look like stairs |
