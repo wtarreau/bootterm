@@ -70,7 +70,8 @@
 #endif
 
 const char version_str[] =
-	"BootTerm " VERSION " -- the terminal written for users by its users\n"
+	"BootTerm " VERSION "\n"
+	"\n"
 #if defined(TCGETS2) && !defined(NO_TCGETS2)
 	"Built with support for custom baud rates (TCGETS2).\n"
 #endif
