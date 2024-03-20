@@ -13,7 +13,7 @@ Source0: %name-%version.tar
 BuildRequires(pre): rpm-build-licenses
 
 %description
-Bootterm is a simple, reliable and powerful terminal designed to ease
+BootTerm is a simple, reliable and powerful terminal designed to ease
 connection to ephemeral serial ports as found on various SBCs, and
 typically USB-based ones.
 

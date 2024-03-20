@@ -1,6 +1,6 @@
 # BootTerm
 
-Bootterm is a simple, reliable and powerful terminal designed to ease connection to ephemeral serial ports as found on various SBCs, and typically USB-based ones.
+BootTerm is a simple, reliable and powerful terminal designed to ease connection to ephemeral serial ports as found on various SBCs, and typically USB-based ones.
 
 ## Main Features
 
@@ -27,7 +27,7 @@ $ make install PREFIX=~/.local
 $ (or "sudo make install" for a system-wide installation)
 ```
 
-The program comes with no other dependency than a basic libc and produces a single binary (`bt`). It can easily be cross-compiled by setting `CROSS_COMPILE` or `CC`, though the makefile only adds unneeded abstraction and could simply be bypassed (please check it, it's self-explanatory). It was tested on several Linux distros and platforms (i386, x86_64, arm, aarch64), on macOS, on FreeBSD 12 (arm64) and on AIX 5.1 (ppc).
+The program comes with no other dependency than a basic libc and produces a single binary (`bt`). It can easily be cross-compiled by setting `CROSS_COMPILE` or `CC`, though the makefile only adds unneeded abstraction and could simply be bypassed (please check it, it's self-explanatory). It was tested on several Linux distros and platforms (i386, x86\_64, arm, aarch64), on macOS, on FreeBSD 12 (arm64) and on AIX 5.1 (ppc).
 
 ## Using it
 
@@ -92,6 +92,7 @@ DRAM:  64 MiB
 ```
 
 One particularly appreciable case is when connecting to an emulated port, such as below on a NanoPI NEO2 running Armbian:
+
 ```
 $ bt -n
 2 ports found, waiting for a new one...
@@ -128,6 +129,7 @@ Escape character is 'Ctrl-]'. Use escape followed by '?' for help.
 ```
 
 It is also possible to enable this port selection mode by default using `BT_SCAN_WAIT_ANY`:
+
 ```
 $ export BT_SCAN_EXCLUDE_PORTS=ttyS*
 $ export BT_SCAN_WAIT_ANY=1
@@ -138,6 +140,7 @@ Waiting for one port to appear...
 It is probably what most laptop users will want to do so as never to have to pass any argument and automatically connect to a USB serial port.
 
 One may also exclude some drivers from the scan using `BT_SCAN_EXCLUDE_DRIVERS`, which can sometimes be more convenient to ignore some known uninteresting internal devices:
+
 ```
 $ bt -l
  port |  age (sec) | device     | driver           | description
@@ -171,9 +174,10 @@ Escape character is 'Ctrl-]'. Use escape followed by '?' for help.
 
 It is interesting to note above that the hardware does not support 74880 bauds and selected its closest support speed (76800). This is a 2.5% error, it will not cause any trouble.
 
-### Using bootterm to detect ports
+### Using BootTerm to detect ports
 
-Bootterm supports a "print" mode. In this mode it will simply print the device name without the leading `/dev/`. It can be convenient as an assistant to other flashing tools to wait for a port and print its name. By default the newly detected port is reported however, and it is wise to switch to quiet mode to avoid intermediary information:
+BootTerm supports a "print" mode. In this mode it will simply print the device name without the leading `/dev/`. It can be convenient as an assistant to other flashing tools to wait for a port and print its name. By default the newly detected port is reported however, and it is wise to switch to quiet mode to avoid intermediary information:
+
 ```
 $ bt -np
 4 ports found, waiting for a new one...
@@ -187,6 +191,7 @@ ttyUSB2
 ```
 
 Thus a script that needs to connect to the port as early as possible to reprogram a board could be doing something like this to wait for the device to show up:
+
 ```
 PORT=$(bt -npq)
 if [ -n "$PORT" ]; then
@@ -216,16 +221,18 @@ If a terminal is needed and a capture of the session is desired, there is a spec
  - `fixed`: a file name is fixed on start of the capture and will not change
  - `timed`: the file name is re-evaluated each second and if it changes, the previous file is closed and a new one is opened.
 
-In all cases, the files are only appended to and never truncated, so that bootterm will never destroy previous traces. If a fresh file is needed, just remove the file before starting bootterm.
+In all cases, the files are only appended to and never truncated, so that BootTerm will never destroy previous traces. If a fresh file is needed, just remove the file before starting BootTerm.
 
 The `fixed` mode usually is the one that users will want to capture a session when dumping a boot loader's configuration or the kernel's boot messages. The `timed` mode can be useful when connecting to a port waiting for rare or periodic events in order to get a dated file. The file name is defined by the format passed to `-f`, which defaults to the current date and time. It uses `strftime()` so please check this man page to get all format options supported on your system.
 
 Thus when exploring a new device, one would likely use:
+
 ```
 $ bt -c fixed
 ```
 
 And when collecting event logs from a server with one file per day:
+
 ```
 $ bt -c timed -f "server-%Y%m%d.log"
 ```
@@ -257,6 +264,7 @@ $ bt -e1
 ```
 
 Those coming from tmux would rather use Ctrl-B:
+
 ```
 $ bt -e2
 ```
@@ -279,13 +287,13 @@ Here are a few other convenient and less common escape characters:
 
 Running at wrong speeds or connecting during a boot sequence often results in some garbage to be received on a terminal. And different terminal emulators handle these differently. For example, Xterm supports a very large variety of codes in the C1 range (0x80-0x9F) among which CSI (0x9B) which is an escape with the high bit set. The problem is that the prefix range is large and that many of them will result in reconfiguring it or hanging it until a sequence ends. This is often translated into unreadble fonts, the terminal definitely freezing, or arrow keys making the cursor move on the screen instead of being sent to the remote terminal. Other terminals have their own problems with 0x00, 0xFF or can be at risk with improper handling of ANSI codes prefixed with 0x1B.
 
-In order to address this, bootterm can block dangerous characters and print them encoded instead. It will always block raw and UTF-8 encoded C1 codes (0x80-0x9F with or without the 0xC2 prefix), as these are always terminal configuration codes which should never be sent to the terminal emulator. In addition it's possible to restrict the range of printable characters using `-m` and `-M`.
+In order to address this, BootTerm can block dangerous characters and print them encoded instead. It will always block raw and UTF-8 encoded C1 codes (0x80-0x9F with or without the 0xC2 prefix), as these are always terminal configuration codes which should never be sent to the terminal emulator. In addition it's possible to restrict the range of printable characters using `-m` and `-M`.
 
 ### Remapping CR to CRLF or LF to CRLF
 
 In raw mode, terminals emit CR and LF separately and expect them both to be received. This is true as well for the user terminal. If the device being connected to works in raw mode but does not emit CR or does not emit LF, then the user terminal will quickly be confusing and painful to use. An environment variable, `BT_PORT_CRLF` may be used to force a remapping of input characters to the expected CRLF pair:
 
-| BT_PORT_CRLF | Behavior | Use case |
+| BT\_PORT\_CRLF | Behavior | Use case |
 |--------------|----------|----------|
 |      0       | no remapping | all the time |
 |      1       | LF is replaced by CRLF | when lines look like stairs |
@@ -297,7 +305,7 @@ Most users will never need to change this setting.
 
 ## Motivation
 
-The first motivation behind writing bootterm was that when working with single board computers (SBC), the serial port is the only interface available during most of the development or exploration of the board, and that sadly, the available tools are either pretty poorly designed, or incomplete as they were not initially made for this purpose. Some tools like `screen` use particularly inconvenient key mappings making it a real pain to use the line editing on some devices, others like `minicom` reconfigure the terminal disabling scrolling and making copy-paste a nightmare. Some like `cu` were not initially designed for this and nobody ever knows the right command-line options nor how to quit it. Then comes the myriad of Python 3-liners which do no error checking, resulting in spinning loops when a port is disconnected and the port being renumbered once reconnected, or conversely crashes and backtraces when facing binary character sequences that do not match UTF-8. Not to mention that many times they can't even install as they depend on various modules that are incompatible with those installed on the local machine.
+The first motivation behind writing BootTerm was that when working with single board computers (SBC), the serial port is the only interface available during most of the development or exploration of the board, and that sadly, the available tools are either pretty poorly designed, or incomplete as they were not initially made for this purpose. Some tools like `screen` use particularly inconvenient key mappings making it a real pain to use the line editing on some devices, others like `minicom` reconfigure the terminal disabling scrolling and making copy-paste a nightmare. Some like `cu` were not initially designed for this and nobody ever knows the right command-line options nor how to quit it. Then comes the myriad of Python 3-liners which do no error checking, resulting in spinning loops when a port is disconnected and the port being renumbered once reconnected, or conversely crashes and backtraces when facing binary character sequences that do not match UTF-8. Not to mention that many times they can't even install as they depend on various modules that are incompatible with those installed on the local machine.
 
 The author has had the best experience with `kwboot`, a tool initially made for flashing some Marvell-based devices, which integrates a terminal that is started at the end of the transfer, and which is now part of U-Boot. A few fixes and changes were brought there (such as allowing the terminal to start without flashing), and it served the purpose reasonably well for a few years. But it doesn't support non-standard speeds that some chips require (ESP8266 at 74880 bps, Rockchip SoCs at 1.5 Mbps) and is not easy to build out of U-boot. After losing too much time fighting with such tools and cycling between them, the author considered that it was about time to address the root cause of the problem, which is that none of these tools was initially written for being used as they are used nowadays, and that if they fit the purpose so badly, it's because they're simply abused.
 
