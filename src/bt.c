@@ -848,7 +848,9 @@ static int serial_port_cmp(const void *a, const void *b)
  */
 int file_isatty(const char *devname)
 {
+#ifdef __linux__
 	struct termios tio;
+#endif
 	struct winsize ws;
 	struct stat st;
 	int ret = 0;
