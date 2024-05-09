@@ -29,6 +29,10 @@ $ (or "sudo make install" for a system-wide installation)
 
 The program comes with no other dependency than a basic libc and produces a single binary (`bt`). It can easily be cross-compiled by setting `CROSS_COMPILE` or `CC`, though the makefile only adds unneeded abstraction and could simply be bypassed (please check it, it's self-explanatory). It was tested on several Linux distros and platforms (i386, x86\_64, arm, aarch64), on macOS, on FreeBSD 12 (arm64) and on AIX 5.1 (ppc).
 
+Alternatively, BootTerm is available in some repositories:
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/bootterm.svg)](https://repology.org/project/bootterm/versions)
+
 ## Using it
 
 ### Most common usage
