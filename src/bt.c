@@ -399,7 +399,7 @@ int in_list(const char *list, const char *item)
 		while (*list && *list != ',' && *list != '*')
 			list++;
 
-		if (*list == '*' && ilen >= list - word) {
+		if (*list == '*' && ilen >= (size_t)(list - word)) {
 			if (strncmp(word, item, list - word) == 0)
 				return 1;
 		}
@@ -484,7 +484,7 @@ static int tcgetattr(int fd, struct termios *tio)
 	return ioctl(fd, TCGETS, tio);
 }
 
-static int tcsetattr(int fd, int ignored, const struct termios *tio)
+static int tcsetattr(int fd, int ignored  __attribute__((unused)), const struct termios *tio)
 {
 	return ioctl(fd, TCSETS, tio);
 }
@@ -677,7 +677,7 @@ char *read_line_from(const char *format, ...)
 	needed = vsnprintf(ftmp, sizeof(ftmp), format, args);
 	va_end(args);
 
-	if (needed < sizeof(ftmp)) {
+	if ((unsigned long)needed < sizeof(ftmp)) {
 		f = fopen(ftmp, "r");
 		if (f) {
 			line = fgets(ltmp, sizeof(ltmp), f);
@@ -709,7 +709,7 @@ char *read_link_from(const char *format, ...)
 	needed = vsnprintf(ftmp, sizeof(ftmp), format, args);
 	va_end(args);
 
-	if (needed < sizeof(ftmp)) {
+	if ((unsigned long)needed < sizeof(ftmp)) {
 		ret = readlink(ftmp, ltmp, sizeof(ltmp) - 1);
 		if (ret > 0) {
 			ltmp[ret] = 0;
@@ -731,7 +731,7 @@ int file_exists(const char *format, ...)
 	needed = vsnprintf(ftmp, sizeof(ftmp), format, args);
 	va_end(args);
 
-	if (needed < sizeof(ftmp))
+	if ((unsigned long)needed < sizeof(ftmp))
 		return stat(ftmp, &st) == 0;
 
 	return 0;
@@ -1306,7 +1306,7 @@ int open_port(const char *port)
 	int retry;
 	int fd;
 
-	if (snprintf(ftmp, sizeof(ftmp),
+	if ((unsigned long)snprintf(ftmp, sizeof(ftmp),
 		     (*port == '/') ? "%s" : "/dev/%s",
 		     port) > sizeof(ftmp)) {
 		errno = ENAMETOOLONG;
