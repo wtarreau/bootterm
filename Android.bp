@@ -1,0 +1,7 @@
+cc_binary {
+    name: "bt",
+    srcs: ["src/bt.c"],
+    cflags: ["-Wall", "-Wextra"],
+    // For 32-bit targets, you might need this:
+    // compile_multilib: "32",
+}
